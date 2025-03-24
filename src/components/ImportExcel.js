@@ -10,6 +10,12 @@ const ImportExcel = () => {
   const [estimatedTime, setEstimatedTime] = useState(0);
   const [recordsProcessed, setRecordsProcessed] = useState(0);
   const [totalRecords, setTotalRecords] = useState(0);
+  const [importSummary, setImportSummary] = useState(null);
+  const [customersCreated, setCustomersCreated] = useState(0);
+  const [customersUpdated, setCustomersUpdated] = useState(0);
+  const [balancesCreated, setBalancesCreated] = useState(0);
+  const [balancesUpdated, setBalancesUpdated] = useState(0);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
@@ -30,28 +36,68 @@ const ImportExcel = () => {
     }
     setUploading(true);
     setProgress(10);
+    setCustomersCreated(0);
+    setCustomersUpdated(0);
+    setBalancesCreated(0);
+    setBalancesUpdated(0);
+    setImportSummary(null);
+    setDebugInfo(null);
+    
     try {
       const data = await readExcelFile(file);
       setProgress(30);
+      
+      // İlk satırları ve değerleri debug için logla
+      const firstFewRows = data.slice(0, 3); // İlk 3 satırı al
+      console.log("Excel başlıkları:", data[0]);
+      console.log("İlk satırlar örneği:", firstFewRows);
+      
       const customers = processExcelData(data);
+      
+      // Debug için müşteri verilerini göster
+      const customerKeys = Object.keys(customers);
+      if (customerKeys.length > 0) {
+        const firstCustomerExample = customers[customerKeys[0]];
+        console.log("İlk müşteri örneği:", firstCustomerExample);
+        setDebugInfo({
+          firstRowExample: firstFewRows[1],
+          firstCustomerExample
+        });
+      }
+      
       setProgress(50);
       const keys = Object.keys(customers);
       setTotalRecords(keys.length);
       await uploadToSupabaseBulk(customers);
       setProgress(100);
+      
+      // İşlem özetini hazırla
+      const summary = {
+        totalProcessed: recordsProcessed,
+        customersCreated,
+        customersUpdated,
+        balancesCreated,
+        balancesUpdated
+      };
+      setImportSummary(summary);
+      
       toast.success('Veriler başarıyla içe aktarıldı');
       setFile(null);
     } catch (error) {
       console.error('Import error:', error);
       toast.error(`Veri içe aktarma hatası: ${error.message}`);
     } finally {
-      setTimeout(() => {
-        setUploading(false);
-        setProgress(0);
-        setEstimatedTime(0);
-        setRecordsProcessed(0);
-        setTotalRecords(0);
-      }, 1000);
+      // Hata durumunda da özet gösterebiliriz
+      if (!importSummary) {
+        setImportSummary({
+          totalProcessed: recordsProcessed,
+          customersCreated,
+          customersUpdated,
+          balancesCreated,
+          balancesUpdated
+        });
+      }
+      setUploading(false);
     }
   };
 
@@ -61,9 +107,17 @@ const ImportExcel = () => {
       reader.onload = (e) => {
         try {
           const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
+          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          
+          // Daha kapsamlı ayarlarla JSON dönüşümü
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+            header: 1,
+            raw: false,     // Tüm değerleri text olarak al
+            dateNF: 'yyyy-mm-dd',  // Tarihler için format
+            defval: ''      // Boş hücreler için varsayılan
+          });
+          
           resolve(jsonData);
         } catch (error) {
           reject(new Error('Excel dosyası okunamadı: ' + error.message));
@@ -74,14 +128,83 @@ const ImportExcel = () => {
     });
   };
 
+  // Excel değerini sayıya çevirme yardımcı fonksiyonu
+  const parseNumericValue = (value) => {
+    if (value === null || value === undefined || value === '') return 0;
+    
+    // Virgül yerine nokta kullanarak sayıya çevir
+    let parsedValue;
+    if (typeof value === 'string') {
+      // Bin ayırıcı (.) varsa kaldır, ondalık ayırıcıyı (,) ile değiştir
+      parsedValue = value.replace(/\./g, '').replace(',', '.');
+    } else {
+      parsedValue = value;
+    }
+    
+    const result = parseFloat(parsedValue);
+    return isNaN(result) ? 0 : result;
+  };
+  
+  // Excel tarihini işleme yardımcı fonksiyonu
+  const parseDateValue = (value) => {
+    if (!value) return null;
+    
+    try {
+      // Excel tarihi numarik mi kontrol et (1900 tarih sistemi)
+      if (typeof value === 'number') {
+        // Excel tarihi (1900 sistemi) - 1 Ocak 1900'den itibaren gün sayısı
+        return new Date(Math.round((value - 25569) * 86400 * 1000));
+      }
+      
+      // Tarih string formatında
+      if (typeof value === 'string') {
+        // Türkçe format (gg.aa.yyyy) kontrolü
+        const dateParts = value.split('.');
+        if (dateParts.length === 3) {
+          // Ay değerini 0-11 aralığına çevir (JavaScript Date)
+          const month = parseInt(dateParts[1], 10) - 1;
+          const day = parseInt(dateParts[0], 10);
+          const year = parseInt(dateParts[2], 10);
+          
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            return new Date(year, month, day);
+          }
+        }
+        
+        // ISO format denemesi (yyyy-mm-dd)
+        const isoDate = new Date(value);
+        if (!isNaN(isoDate.getTime())) {
+          return isoDate;
+        }
+      }
+      
+      // Tarih objesi kontrolü
+      if (value instanceof Date && !isNaN(value.getTime())) {
+        return value;
+      }
+    } catch (error) {
+      console.error("Tarih ayrıştırma hatası:", error, "Değer:", value);
+    }
+    
+    return null;
+  };
+
   const processExcelData = (data) => {
     const headers = data[0];
     const customers = {};
+    
+    // Kolon indekslerini bul
     const findColumnIndex = (name) => {
-      return headers.findIndex(header =>
-        header && header.toString().toLowerCase().includes(name.toLowerCase())
-      );
+      // Daha esnek sütun başlığı eşleştirme
+      return headers.findIndex(header => {
+        if (!header) return false;
+        const headerStr = header.toString().toLowerCase().trim();
+        const searchStr = name.toLowerCase().trim();
+        return headerStr.includes(searchStr);
+      });
     };
+    
+    // Sütun indekslerini bul
     const codeIndex = findColumnIndex('cari hesap kodu');
     const nameIndex = findColumnIndex('cari hesap adı');
     const sectorIndex = findColumnIndex('sektör kodu');
@@ -89,128 +212,263 @@ const ImportExcel = () => {
     const regionIndex = findColumnIndex('bölge kodu');
     const paymentTermIndex = findColumnIndex('cari ödeme vadesi');
     const pastDueBalanceIndex = findColumnIndex('vadesi geçen bakiye');
-    const dueDateIndex = findColumnIndex('vadesi geçen bakiye vadesi');
-    const valorIndex = findColumnIndex('valör');
+    const pastDueDateIndex = findColumnIndex('vadesi geçen bakiye vadesi');
     const notDueBalanceIndex = findColumnIndex('vadesi geçmemiş bakiye');
+    const notDueDateIndex = findColumnIndex('vadesi geçmemiş bakiye vadesi'); // YENİ: Vadesi geçmemiş bakiye vadesi
+    const valorIndex = findColumnIndex('valör');
     const totalBalanceIndex = findColumnIndex('toplam bakiye');
     const refDateIndex = findColumnIndex('bakiyeye konu ilk evrak');
+    
+    // Debug için indeksleri yazdır
+    console.log("Bulunan indeksler:", {
+      codeIndex,
+      nameIndex,
+      pastDueBalanceIndex,
+      pastDueDateIndex,
+      notDueDateIndex, // YENİ: Vadesi geçmemiş bakiye vadesi indeksi
+      totalBalanceIndex
+    });
+    
     if (codeIndex === -1 || nameIndex === -1) {
       throw new Error('Gerekli sütunlar bulunamadı. Excel formatınızı kontrol edin.');
     }
+    
+    // Veri satırlarını işle (başlık satırını atla)
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
+      
+      // Boş satırları atla
       if (!row[codeIndex]) continue;
-      const customerCode = row[codeIndex].toString();
+      
+      const customerCode = row[codeIndex].toString().trim();
+      
+      // Aynı müşteri kodunu tekrar işleme
       if (customers[customerCode]) {
         console.warn(`Müşteri kodu '${customerCode}' birden fazla satırda bulundu. Sadece ilk satır işlenecek.`);
         continue;
       }
-      let dueDate = null;
-      if (row[dueDateIndex]) {
-        if (typeof row[dueDateIndex] === 'number') {
-          dueDate = new Date(Math.round((row[dueDateIndex] - 25569) * 86400 * 1000));
-        } else if (typeof row[dueDateIndex] === 'string') {
-          const parts = row[dueDateIndex].split('.');
-          if (parts.length === 3) {
-            dueDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-          }
-        }
+      
+      // Vadesi geçmiş bakiye vadesi
+      let pastDueDate = null;
+      if (pastDueDateIndex !== -1 && row[pastDueDateIndex]) {
+        pastDueDate = parseDateValue(row[pastDueDateIndex]);
       }
+      
+      // Vadesi geçmemiş bakiye vadesi - YENİ
+      let notDueDate = null;
+      if (notDueDateIndex !== -1 && row[notDueDateIndex]) {
+        notDueDate = parseDateValue(row[notDueDateIndex]);
+      }
+      
+      // Referans tarihini ayıkla
       let refDate = null;
-      if (row[refDateIndex]) {
-        if (typeof row[refDateIndex] === 'number') {
-          refDate = new Date(Math.round((row[refDateIndex] - 25569) * 86400 * 1000));
-        } else if (typeof row[refDateIndex] === 'string') {
-          const parts = row[refDateIndex].split('.');
-          if (parts.length === 3) {
-            refDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
-          }
-        }
+      if (refDateIndex !== -1 && row[refDateIndex]) {
+        refDate = parseDateValue(row[refDateIndex]);
       }
+      
+      // Bakiye değerlerini sayıya çevir
+      const pastDueBalance = pastDueBalanceIndex !== -1 ? parseNumericValue(row[pastDueBalanceIndex]) : 0;
+      const notDueBalance = notDueBalanceIndex !== -1 ? parseNumericValue(row[notDueBalanceIndex]) : 0;
+      const totalBalance = totalBalanceIndex !== -1 ? parseNumericValue(row[totalBalanceIndex]) : 0;
+      const valor = valorIndex !== -1 ? parseInt(parseNumericValue(row[valorIndex]) || 0) : 0;
+      
+      // Müşteri ve bakiye verisini oluştur
       customers[customerCode] = {
         customer: {
           code: customerCode,
-          name: row[nameIndex],
-          sector_code: row[sectorIndex],
-          group_code: row[groupIndex],
-          region_code: row[regionIndex],
-          payment_term: row[paymentTermIndex]
+          name: row[nameIndex] ? row[nameIndex].toString().trim() : '',
+          sector_code: sectorIndex !== -1 && row[sectorIndex] ? row[sectorIndex].toString().trim() : null,
+          group_code: groupIndex !== -1 && row[groupIndex] ? row[groupIndex].toString().trim() : null,
+          region_code: regionIndex !== -1 && row[regionIndex] ? row[regionIndex].toString().trim() : null,
+          payment_term: paymentTermIndex !== -1 && row[paymentTermIndex] ? row[paymentTermIndex].toString().trim() : null
         },
         balance: {
-          past_due_balance: parseFloat(row[pastDueBalanceIndex] || 0),
-          due_date: dueDate ? dueDate.toISOString().split('T')[0] : null,
-          valor: parseInt(row[valorIndex] || 0),
-          not_due_balance: parseFloat(row[notDueBalanceIndex] || 0),
-          total_balance: parseFloat(row[totalBalanceIndex] || 0),
+          past_due_balance: pastDueBalance,
+          past_due_date: pastDueDate ? pastDueDate.toISOString().split('T')[0] : null,
+          not_due_balance: notDueBalance,
+          not_due_date: notDueDate ? notDueDate.toISOString().split('T')[0] : null, // YENİ: Vadesi geçmemiş bakiye vadesi
+          valor: valor,
+          total_balance: totalBalance,
           reference_date: refDate ? refDate.toISOString().split('T')[0] : null
         }
       };
+      
+      // İlk 3 müşteriyi örnek olarak logla
+      if (i <= 3) {
+        console.log(`Müşteri #${i}:`, customers[customerCode]);
+      }
     }
+    
     return customers;
   };
 
   const uploadToSupabaseBulk = async (customers) => {
     const keys = Object.keys(customers);
-    // Müşteri verilerini diziye dönüştür
-    const customersArray = keys.map(code => ({
-      code: customers[code].customer.code,
-      name: customers[code].customer.name,
-      sector_code: customers[code].customer.sector_code,
-      group_code: customers[code].customer.group_code,
-      region_code: customers[code].customer.region_code,
-      payment_term: customers[code].customer.payment_term,
-      updated_at: new Date().toISOString()
-    }));
-    // Bulk upsert ile müşterileri ekle/güncelle
-    const { data: upsertedCustomers, error: upsertError } = await supabase
-      .from('customers')
-      .upsert(customersArray, { onConflict: 'code', returning: 'representation' });
-    if (upsertError) throw upsertError;
-    // Müşteri kodundan id'leri eşle
-    let customerMap = {};
-    if (upsertedCustomers && upsertedCustomers.length > 0) {
-      upsertedCustomers.forEach(customer => {
-        customerMap[customer.code] = customer.id;
-      });
-    } else {
-      // Eğer upsert sonucu boş geldiyse, yeniden sorgula
-      const { data: fetchedCustomers, error: fetchError } = await supabase
+    const CHUNK_SIZE = 50; // Daha küçük parçalar halinde işlem yap
+    
+    // İlerleme takibi için
+    let processedCount = 0;
+    let customersCreatedCount = 0;
+    let customersUpdatedCount = 0;
+    let balancesCreatedCount = 0;
+    let balancesUpdatedCount = 0;
+    
+    setTotalRecords(keys.length);
+    
+    try {
+      // Müşteri kodu-ID eşleşmelerini saklamak için
+      const existingCustomers = new Set();
+      
+      // Mevcut müşteri kodlarını kontrol etmek için önce bir sorgu yapalım
+      const { data: existingData, error: existingError } = await supabase
         .from('customers')
-        .select('id, code')
-        .in('code', keys);
-      if (fetchError) throw fetchError;
-      fetchedCustomers.forEach(customer => {
-        customerMap[customer.code] = customer.id;
-      });
-    }
-    // Bakiye verilerini diziye dönüştür; geçerli customer_id olanları dahil et
-    const balancesArray = keys.map(code => {
-      const cid = customerMap[code];
-      if (!cid) {
-        console.warn(`No customer id found for code ${code}`);
+        .select('id, code');
+        
+      if (existingError) throw existingError;
+      
+      // Mevcut müşteri kodlarını bir set'e ekleyelim
+      const customerIdMap = {};
+      if (existingData && existingData.length > 0) {
+        existingData.forEach(customer => {
+          existingCustomers.add(customer.code);
+          customerIdMap[customer.code] = customer.id;
+        });
       }
-      return {
-        customer_id: cid,
-        past_due_balance: customers[code].balance.past_due_balance,
-        due_date: customers[code].balance.due_date,
-        valor: customers[code].balance.valor,
-        not_due_balance: customers[code].balance.not_due_balance,
-        total_balance: customers[code].balance.total_balance,
-        reference_date: customers[code].balance.reference_date,
-        updated_at: new Date().toISOString()
-      };
-    }).filter(row => row.customer_id);
-    
-    // Eğer balancesArray boşsa, upsert yapmaya çalışmayın
-    if (balancesArray.length === 0) {
-      console.warn("Hiç geçerli bakiye kaydı bulunamadı. Upsert atlanıyor.");
-      return;
+      
+      // Müşteri verilerini parçalara bölerek işle
+      for (let i = 0; i < keys.length; i += CHUNK_SIZE) {
+        const chunkKeys = keys.slice(i, i + CHUNK_SIZE);
+        
+        // Bu parça için müşteri verilerini oluştur
+        const customersChunk = chunkKeys.map(code => ({
+          code: customers[code].customer.code,
+          name: customers[code].customer.name,
+          sector_code: customers[code].customer.sector_code,
+          group_code: customers[code].customer.group_code,
+          region_code: customers[code].customer.region_code,
+          payment_term: customers[code].customer.payment_term,
+          updated_at: new Date().toISOString()
+        }));
+        
+        // Her müşteri için yeni mi güncelleme mi olduğunu kontrol et
+        customersChunk.forEach(customer => {
+          if (existingCustomers.has(customer.code)) {
+            customersUpdatedCount++;
+          } else {
+            customersCreatedCount++;
+            existingCustomers.add(customer.code); // Yeni eklenen müşteriyi set'e ekle
+          }
+        });
+        
+        // Bulk upsert ile müşterileri ekle/güncelle
+        const { data: upsertedCustomers, error: upsertError } = await supabase
+          .from('customers')
+          .upsert(customersChunk, { onConflict: 'code', returning: 'representation' });
+        
+        if (upsertError) throw upsertError;
+        
+        // Müşteri kodundan id'leri eşle
+        let chunkCustomerMap = {};
+        if (upsertedCustomers && upsertedCustomers.length > 0) {
+          upsertedCustomers.forEach(customer => {
+            chunkCustomerMap[customer.code] = customer.id;
+            customerIdMap[customer.code] = customer.id; // Ana haritayı da güncelle
+          });
+        } else {
+          // Eğer upsert sonucu boş geldiyse, yeniden sorgula
+          const { data: fetchedCustomers, error: fetchError } = await supabase
+            .from('customers')
+            .select('id, code')
+            .in('code', chunkKeys);
+          
+          if (fetchError) throw fetchError;
+          
+          fetchedCustomers.forEach(customer => {
+            chunkCustomerMap[customer.code] = customer.id;
+            customerIdMap[customer.code] = customer.id; // Ana haritayı da güncelle
+          });
+        }
+        
+        // Mevcut müşteri bakiyelerini kontrol etmek için
+        const customerIds = Object.values(chunkCustomerMap).filter(id => id);
+        const { data: existingBalances, error: balanceError } = await supabase
+          .from('customer_balances')
+          .select('customer_id')
+          .in('customer_id', customerIds);
+          
+        if (balanceError) throw balanceError;
+        
+        // Mevcut bakiyeleri bir set'e ekleyelim
+        const existingBalanceIds = new Set();
+        if (existingBalances && existingBalances.length > 0) {
+          existingBalances.forEach(balance => {
+            existingBalanceIds.add(balance.customer_id);
+          });
+        }
+        
+        // Bakiye verilerini diziye dönüştür; geçerli customer_id olanları dahil et
+        const balancesChunk = chunkKeys.map(code => {
+          const cid = chunkCustomerMap[code];
+          if (!cid) {
+            console.warn(`${code} kodlu müşteri için ID bulunamadı`);
+            return null;
+          }
+          
+          // Bakiye yeni mi güncelleme mi kontrol et
+          if (existingBalanceIds.has(cid)) {
+            balancesUpdatedCount++;
+          } else {
+            balancesCreatedCount++;
+          }
+          
+          // YENİ: Güncellenen bakiye verileri - İki vade tarihi de ekleniyor
+          return {
+            customer_id: cid,
+            past_due_balance: customers[code].balance.past_due_balance,
+            past_due_date: customers[code].balance.past_due_date,
+            not_due_balance: customers[code].balance.not_due_balance,
+            not_due_date: customers[code].balance.not_due_date, // YENİ: Vadesi geçmemiş bakiye vadesi
+            valor: customers[code].balance.valor,
+            total_balance: customers[code].balance.total_balance,
+            reference_date: customers[code].balance.reference_date,
+            updated_at: new Date().toISOString()
+          };
+        }).filter(row => row !== null);
+
+        // İlk bakiye verisini logla
+        if (balancesChunk.length > 0) {
+          console.log("İlk bakiye verisi:", balancesChunk[0]);
+        }
+        
+        // Eğer balancesChunk boşsa, upsert yapmaya çalışmayın
+        if (balancesChunk.length > 0) {
+          const { error: balanceUpsertError } = await supabase
+            .from('customer_balances')
+            .upsert(balancesChunk, { onConflict: 'customer_id', returning: 'minimal' });
+          
+          if (balanceUpsertError) throw balanceUpsertError;
+        } else {
+          console.warn("Bu parça için geçerli bakiye kaydı bulunamadı. Upsert atlanıyor.");
+        }
+        
+        // İstatistikleri güncelle
+        setCustomersCreated(customersCreatedCount);
+        setCustomersUpdated(customersUpdatedCount);
+        setBalancesCreated(balancesCreatedCount);
+        setBalancesUpdated(balancesUpdatedCount);
+        
+        // İlerleme durumunu güncelle
+        processedCount += chunkKeys.length;
+        setRecordsProcessed(processedCount);
+        setProgress(50 + Math.floor((processedCount / keys.length) * 40));
+        
+        // İstek yoğunluğunu azaltmak için kısa bir bekleme
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    } catch (error) {
+      console.error("Veri yükleme hatası:", error);
+      throw error;
     }
-    
-    const { error: balanceError } = await supabase
-      .from('customer_balances')
-      .upsert(balancesArray, { onConflict: 'customer_id', returning: 'minimal' });
-    if (balanceError) throw balanceError;
   };
 
   return (
@@ -231,8 +489,9 @@ const ImportExcel = () => {
         <li>Cari Ödeme Vadesi</li>
         <li>Vadesi geçen bakiye</li>
         <li>Vadesi geçen bakiye vadesi</li>
-        <li>Valör</li>
         <li>Vadesi geçmemiş bakiye</li>
+        <li>Vadesi geçmemiş bakiye vadesi</li>
+        <li>Valör</li>
         <li>Toplam bakiye</li>
         <li>Bakiyeye konu ilk evrak tarihi</li>
       </ul>
@@ -279,6 +538,53 @@ const ImportExcel = () => {
       >
         {uploading ? 'İşleniyor...' : 'İçe Aktar'}
       </button>
+      
+      {importSummary && (
+        <div className="card" style={{ marginTop: '20px', backgroundColor: '#f9f9f9' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>
+            İçe Aktarma Özeti
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+            <div>
+              <p style={{ fontSize: '14px', color: '#888' }}>İşlenen Toplam Kayıt</p>
+              <p style={{ fontWeight: 'bold', fontSize: '18px' }}>{importSummary.totalProcessed}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', color: '#888' }}>Eklenen Müşteriler</p>
+              <p style={{ fontWeight: 'bold', fontSize: '18px', color: '#2ecc71' }}>{importSummary.customersCreated}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', color: '#888' }}>Güncellenen Müşteriler</p>
+              <p style={{ fontWeight: 'bold', fontSize: '18px', color: '#3498db' }}>{importSummary.customersUpdated}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', color: '#888' }}>Eklenen Bakiyeler</p>
+              <p style={{ fontWeight: 'bold', fontSize: '18px', color: '#2ecc71' }}>{importSummary.balancesCreated}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: '14px', color: '#888' }}>Güncellenen Bakiyeler</p>
+              <p style={{ fontWeight: 'bold', fontSize: '18px', color: '#3498db' }}>{importSummary.balancesUpdated}</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Debug bilgileri (geliştiriciler için) */}
+      {debugInfo && (
+        <div className="card" style={{ marginTop: '20px', backgroundColor: '#f0f8ff', padding: '10px', fontSize: '12px' }}>
+          <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '5px' }}>Debug Bilgisi (Geliştirici Modu)</h3>
+          <p style={{ marginBottom: '10px' }}>İlk Excel satırı ve işlenmiş müşteri örneği:</p>
+          <pre style={{ 
+            backgroundColor: '#f5f5f5', 
+            padding: '8px', 
+            borderRadius: '4px', 
+            overflow: 'auto',
+            maxHeight: '200px'
+          }}>
+            {JSON.stringify(debugInfo, null, 2)}
+          </pre>
+        </div>
+      )}
     </div>
   );
 };
