@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 
-const Navigation = ({ userRole }) => {
+const Navigation = ({ userRole, isMuhasebe }) => {
   const navStyle = {
     width: '240px',
     backgroundColor: '#fff',
@@ -81,8 +81,8 @@ const Navigation = ({ userRole }) => {
           Profilim
         </NavLink>
         
-        {/* Sadece admin kullanıcılar için */}
-        {userRole === 'admin' && (
+        {/* Sadece admin ve muhasebe kullanıcılar için */}
+        {(userRole === 'admin' || isMuhasebe) && (
           <>
             <NavLink 
               to="/user-assignments" 
@@ -90,15 +90,30 @@ const Navigation = ({ userRole }) => {
             >
               Müşteri Atamaları
             </NavLink>
-            
-            <NavLink 
-              to="/auth-manager" 
-              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-            >
-              Kullanıcı Yönetimi
-            </NavLink>
           </>
         )}
+        
+        {/* Sadece admin kullanıcılar için */}
+        {userRole === 'admin' && (
+          <NavLink 
+            to="/auth-manager" 
+            style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+          >
+            Kullanıcı Yönetimi
+          </NavLink>
+        )}
+      </div>
+      
+      {/* Rol göstergesi */}
+      <div style={{
+        marginTop: '20px',
+        padding: '10px 20px',
+        backgroundColor: '#f8f9fa',
+        fontSize: '13px',
+        color: '#666'
+      }}>
+        Rol: {userRole === 'admin' ? 'Yönetici' : 
+              userRole === 'muhasebe' ? 'Muhasebe' : 'Kullanıcı'}
       </div>
     </nav>
   );

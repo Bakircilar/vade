@@ -4,6 +4,7 @@ import { supabase } from '../services/supabase';
 import { format, differenceInDays, addDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { toast } from 'react-toastify';
+import VadeHelper from '../helpers/VadeHelper';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -19,13 +20,16 @@ const Dashboard = () => {
   const [debug, setDebug] = useState({
     upcomingItems: [],
     overdueItems: [],
-    dates: {}
+    dates: {},
+    counts: {}
   });
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       try {
+        console.log("Veri yükleniyor... Görünüm modu:", viewMode);
+        
         // Adım 1: Müşteri sayısını al
         const { count, error: countError } = await supabase
           .from('customers')
@@ -50,47 +54,53 @@ const Dashboard = () => {
             customers (
               id, name, code
             )
-          `);
+          `)
+          .limit(10000);
         
         if (balancesError) throw balancesError;
+        
+        console.log(`${balances?.length || 0} adet bakiye kaydı yüklendi.`);
         
         // Bugünün tarihi
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        // 10 gün sonrası
-        const tenDaysLater = new Date(today);
-        tenDaysLater.setDate(today.getDate() + 10);
+        // 15 gün sonrası
+        const fifteenDaysLater = new Date(today);
+        fifteenDaysLater.setDate(today.getDate() + 15);
         
         // Debug için
         setDebug(prev => ({
           ...prev,
           dates: {
             today: today.toISOString().split('T')[0],
-            tenDaysLater: tenDaysLater.toISOString().split('T')[0]
+            fifteenDaysLater: fifteenDaysLater.toISOString().split('T')[0]
           }
         }));
         
+        // İstatistikler
         let upcomingCount = 0;
         let overdueCount = 0;
-        let upcomingBalances = [];
-        let upcomingItems = [];
-        let overdueItems = [];
+        const upcomingBalances = [];
+        const upcomingItems = [];
+        const overdueItems = [];
         
         // Bakiyeleri analiz et
         if (balances && balances.length > 0) {
+          console.log("Bakiyeler analiz ediliyor...");
+          
           balances.forEach(balance => {
-            // Müşteri bilgisi yoksa atla
-            if (!balance.customers) return;
-            
             try {
-              // Bakiye değerlerini normalize et
-              const pastDueBalance = parseFloat(balance.past_due_balance || 0);
-              const notDueBalance = parseFloat(balance.not_due_balance || 0);
-              const totalBalance = parseFloat(balance.total_balance || 0) || (pastDueBalance + notDueBalance);
+              // Müşteri bilgisi yoksa atla
+              if (!balance.customers) return;
+              
+              // Bakiye değerlerini parse et
+              const pastDueBalance = VadeHelper.parseAmount(balance.past_due_balance);
+              const notDueBalance = VadeHelper.parseAmount(balance.not_due_balance);
+              const totalBalance = VadeHelper.calculateTotal(balance);
               
               // Müşteri/Tedarikçi ayrımı
-              const isCustomer = totalBalance > 0;
+              const isCustomer = totalBalance >= 0;
               const isSupplier = totalBalance < 0;
               
               // Görünüm moduna göre filtrele
@@ -99,11 +109,14 @@ const Dashboard = () => {
                 return;
               }
               
-              // 1. VADESI GEÇMIŞ BAKIYE KONTROLÜ:
-              // past_due_balance varsa, bu otomatik olarak vadesi geçmiş demektir
-              if (pastDueBalance > 0) {
+              // ÖNEMLİ: VADESİ GEÇMİŞ KONTROLÜ
+              // Sadece past_due_balance > 100₺ kontrolü yap
+              const isPastDue = pastDueBalance > VadeHelper.MIN_BALANCE;
+              
+              if (isPastDue) {
                 overdueCount++;
                 
+                // Debug için örnek ekle 
                 overdueItems.push({
                   customer: balance.customers.name,
                   balance: pastDueBalance,
@@ -111,15 +124,15 @@ const Dashboard = () => {
                 });
               }
               
-              // 2. YAKLAŞAN VADE KONTROLÜ:
-              // not_due_date'i kontrol et, bugünden 10 güne kadar olan tarihleri yaklaşan olarak işaretle
-              if (balance.not_due_date && notDueBalance > 0) {
+              // ÖNEMLİ: YAKLAŞAN VADE KONTROLÜ
+              // not_due_date'i kontrol et, bugünden 15 güne kadar olan tarihleri yaklaşan olarak işaretle
+              // not_due_balance > 100₺ olmalı
+              if (balance.not_due_date && notDueBalance > VadeHelper.MIN_BALANCE) {
                 try {
                   const dueDate = new Date(balance.not_due_date);
                   dueDate.setHours(0, 0, 0, 0);
                   
-                  if (dueDate >= today && dueDate <= tenDaysLater) {
-                    // Yaklaşan vade
+                  if (dueDate >= today && dueDate <= fifteenDaysLater) {
                     upcomingCount++;
                     
                     upcomingItems.push({
@@ -141,7 +154,7 @@ const Dashboard = () => {
                     });
                   }
                 } catch (err) {
-                  console.error("Tarih işleme hatası (not_due_date):", err);
+                  console.error("Tarih işleme hatası (not_due_date):", err, balance.not_due_date);
                 }
               }
             } catch (err) {
@@ -149,19 +162,25 @@ const Dashboard = () => {
             }
           });
           
-          // Yaklaşan vadeleri tarihe göre sırala
-          upcomingBalances.sort((a, b) => {
-            const aDate = a.vade_tarihi;
-            const bDate = b.vade_tarihi;
-            return aDate - bDate;
-          });
+          console.log(`Analiz sonuçları: Vadesi Geçmiş: ${overdueCount}, Yaklaşan Vadeler: ${upcomingCount}`);
         }
+        
+        // Yaklaşan vadeleri tarihe göre sırala
+        upcomingBalances.sort((a, b) => {
+          if (!a.vade_tarihi || !b.vade_tarihi) return 0;
+          return new Date(a.vade_tarihi) - new Date(b.vade_tarihi);
+        });
         
         // Debug için örnekleri kaydet
         setDebug(prev => ({
           ...prev,
           upcomingItems: upcomingItems.slice(0, 5),
-          overdueItems: overdueItems.slice(0, 5)
+          overdueItems: overdueItems.slice(0, 5),
+          counts: {
+            total: balances?.length || 0,
+            upcoming: upcomingCount,
+            overdue: overdueCount
+          }
         }));
         
         // İstatistikleri güncelle
@@ -270,7 +289,7 @@ const Dashboard = () => {
         </div>
         
         <div style={{ marginBottom: '10px' }}>
-          <strong>Vade Aralığı:</strong> {debug.dates.today} ile {debug.dates.tenDaysLater} arası (bugünden 10 gün sonrası)
+          <strong>Vade Aralığı:</strong> {debug.dates.today} ile {debug.dates.fifteenDaysLater} arası (bugünden 15 gün sonrası)
         </div>
         
         <div style={{ marginBottom: '10px' }}>
@@ -278,20 +297,20 @@ const Dashboard = () => {
         </div>
         
         <div style={{ marginBottom: '10px' }}>
-          <strong>Yaklaşan Vade Sayısı:</strong> {stats.upcomingCount}
+          <strong>Yaklaşan Vade Sayısı:</strong> {stats.upcomingCount} (Debug: {debug.counts.upcoming})
         </div>
         
         <div style={{ marginBottom: '10px' }}>
-          <strong>Vadesi Geçmiş Sayısı:</strong> {stats.overdueCount}
+          <strong>Vadesi Geçmiş Sayısı:</strong> {stats.overdueCount} (Debug: {debug.counts.overdue})
         </div>
         
-        {debug.upcomingItems.length > 0 ? (
+        {debug.upcomingItems && debug.upcomingItems.length > 0 ? (
           <div style={{ marginBottom: '10px' }}>
             <strong>Yaklaşan Vadeler Örnekleri:</strong>
             <ul>
               {debug.upcomingItems.map((item, index) => (
                 <li key={index}>
-                  {item.customer}: {new Date(item.date).toLocaleDateString()} - 
+                  {item.customer}: {item.date ? new Date(item.date).toLocaleDateString() : '-'} - 
                   Vade Tutarı: {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Math.abs(item.balance))}
                 </li>
               ))}
@@ -303,7 +322,7 @@ const Dashboard = () => {
           </div>
         )}
         
-        {debug.overdueItems.length > 0 ? (
+        {debug.overdueItems && debug.overdueItems.length > 0 ? (
           <div style={{ marginBottom: '10px' }}>
             <strong>Vadesi Geçmiş Örnekleri:</strong>
             <ul>
@@ -322,9 +341,9 @@ const Dashboard = () => {
         )}
         
         <div style={{ marginTop: '10px', padding: '10px', backgroundColor: '#d4edda', color: '#155724', borderRadius: '4px' }}>
-          <strong>NOT:</strong> Bu sayfada sadece:<br/>
-          1. Vadesi geçmiş (past_due_balance > 0) kayıtlar<br/>
-          2. Vadesi gelecek 10 gün içinde olan (not_due_date) kayıtlar gösterilmektedir.
+          <strong>NOT:</strong> Bu sayfada:<br/>
+          1. Vadesi geçmiş hesaplaması: past_due_balance > 100₺ olan kayıtlar<br/>
+          2. Yaklaşan vade hesaplaması: not_due_balance > 100₺ ve tarihi 15 gün içinde olan kayıtlar
         </div>
       </div>
       
@@ -364,7 +383,7 @@ const Dashboard = () => {
         <div className="stat-card">
           <h3 style={{ fontSize: '14px', color: '#888', marginBottom: '5px' }}>Ödeme Vadesi</h3>
           <p style={{ fontSize: '24px', fontWeight: 'bold' }}>
-            {stats.upcomingBalances.length > 0 ? '10 Gün İçinde' : '-'}
+            {stats.upcomingBalances.length > 0 ? '15 Gün İçinde' : '-'}
           </p>
           <Link to="/payments" style={{ fontSize: '14px', color: '#2ecc71', textDecoration: 'none' }}>
             Tümünü Görüntüle →
@@ -375,10 +394,10 @@ const Dashboard = () => {
       {/* Yaklaşan Vadeler */}
       <div className="card" style={{ marginTop: '20px' }}>
         <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>
-          Vadesi Yaklaşan {viewMode === 'customer' ? 'Müşteri' : 'Tedarikçi'} Bakiyeleri (10 gün içinde)
+          Vadesi Yaklaşan {viewMode === 'customer' ? 'Müşteri' : 'Tedarikçi'} Bakiyeleri (15 gün içinde)
         </h2>
 
-        {stats.upcomingBalances.length > 0 ? (
+        {stats.upcomingBalances && stats.upcomingBalances.length > 0 ? (
           <table>
             <thead>
               <tr>
@@ -434,7 +453,7 @@ const Dashboard = () => {
           </table>
         ) : (
           <p style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
-            10 gün içinde vadesi dolacak bakiye bulunmuyor.
+            15 gün içinde vadesi dolacak bakiye bulunmuyor.
           </p>
         )}
       </div>
@@ -445,7 +464,7 @@ const Dashboard = () => {
           Son Eklenen Müşteriler
         </h2>
 
-        {stats.recentCustomers.length > 0 ? (
+        {stats.recentCustomers && stats.recentCustomers.length > 0 ? (
           <table>
             <thead>
               <tr>

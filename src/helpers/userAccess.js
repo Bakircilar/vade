@@ -5,6 +5,7 @@ import { supabase } from '../services/supabase';
 export const useUserAccess = () => {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isMuhasebe, setIsMuhasebe] = useState(false); // Muhasebe rolü için eklendi
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,6 +20,7 @@ export const useUserAccess = () => {
         if (!user) {
           setUser(null);
           setIsAdmin(false);
+          setIsMuhasebe(false);
           return;
         }
         
@@ -35,8 +37,9 @@ export const useUserAccess = () => {
           console.error('Rol sorgulama hatası:', error);
         }
         
-        // Yönetici rolünü kontrol et
+        // Rolleri kontrol et
         setIsAdmin(data?.role === 'admin');
+        setIsMuhasebe(data?.role === 'muhasebe'); // Muhasebe rolünü kontrol et
       } catch (error) {
         console.error('Kullanıcı kontrolü hatası:', error);
       } finally {
@@ -51,10 +54,27 @@ export const useUserAccess = () => {
   const checkCustomerAccess = async (customerId) => {
     if (!user) return false;
     
-    // Yönetici her müşteriye erişebilir
-    if (isAdmin) return true;
+    // Yönetici ve muhasebe her müşteriye erişebilir
+    if (isAdmin || isMuhasebe) return true;
     
     try {
+      // Önce müşteri sektörünü kontrol et
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('sector_code')
+        .eq('id', customerId)
+        .single();
+        
+      if (customerError) {
+        console.error('Müşteri sektör kontrolü hatası:', customerError);
+        return false;
+      }
+      
+      // Eğer satıcı sektöründe ise, normal kullanıcı erişemez
+      if (customerData?.sector_code === 'satıcı') {
+        return false;
+      }
+      
       // Bu müşteri kullanıcıya atanmış mı kontrol et
       const { data, error } = await supabase
         .from('user_customer_assignments')
@@ -79,8 +99,8 @@ export const useUserAccess = () => {
   const getAssignedCustomerIds = async () => {
     if (!user) return [];
     
-    // Yönetici için tüm müşteri ID'lerini getir
-    if (isAdmin) {
+    // Yönetici ve muhasebe için tüm müşteri ID'lerini getir
+    if (isAdmin || isMuhasebe) {
       const { data, error } = await supabase
         .from('customers')
         .select('id');
@@ -116,8 +136,11 @@ export const useUserAccess = () => {
   const filterCustomersByAccess = useCallback(async (queryBuilder) => {
     if (!user) return queryBuilder;
     
-    // Yönetici tüm müşterilere erişebilir
-    if (isAdmin) return queryBuilder;
+    // Yönetici ve muhasebe tüm müşterilere erişebilir
+    if (isAdmin || isMuhasebe) return queryBuilder;
+    
+    // Normal kullanıcılar "satıcı" sektöründeki müşterileri göremez
+    queryBuilder = queryBuilder.not('sector_code', 'eq', 'satıcı');
     
     // Kullanıcıya atanmış müşteri ID'lerini al
     const assignedIds = await getAssignedCustomerIds();
@@ -130,26 +153,15 @@ export const useUserAccess = () => {
     
     // Sadece atanmış müşterileri getir
     return queryBuilder.in('id', assignedIds);
-  }, [user, isAdmin]);
+  }, [user, isAdmin, isMuhasebe]);
 
   return {
     user,
     isAdmin,
+    isMuhasebe, // Muhasebe rolünü de döndür
     loading,
     checkCustomerAccess,
     getAssignedCustomerIds,
     filterCustomersByAccess
   };
 };
-
-// Kullanımı:
-// 1. Bileşende import et:
-// import { useUserAccess } from '../helpers/userAccess';
-//
-// 2. Bileşen içinde kullan:
-// const { isAdmin, filterCustomersByAccess } = useUserAccess();
-//
-// 3. Supabase sorgusu yaparken filtrele:
-// let query = supabase.from('customers').select('*');
-// query = await filterCustomersByAccess(query);
-// const { data, error } = await query;

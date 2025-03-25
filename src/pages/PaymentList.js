@@ -4,6 +4,7 @@ import { supabase } from '../services/supabase';
 import { format, addDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { toast } from 'react-toastify';
+import * as XLSX from 'xlsx';
 
 const PaymentList = () => {
   // URL parametre değerlerini al
@@ -11,14 +12,17 @@ const PaymentList = () => {
   const filterType = searchParams.get('filter') || 'all';
   
   const [balances, setBalances] = useState([]);
+  const [allRecords, setAllRecords] = useState([]); // Tüm kayıtları sakla
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dateRange, setDateRange] = useState(30); // Yaklaşan vadeler için 30 gün
+  const [exporting, setExporting] = useState(false);
   
   // İstatistikler
   const [stats, setStats] = useState({
     total: 0,
-    displayed: 0
+    displayed: 0,
+    allRecordsCount: 0 // Toplam tüm kayıt sayısı
   });
 
   // Vade aralığını değiştirme fonksiyonu
@@ -30,7 +34,10 @@ const PaymentList = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Tüm bakiyeleri ve müşteri bilgilerini getir - basit sorgu
+      // Test amaçlı olarak filtreleme öncesi tüm verileri alıyoruz
+      console.log("Veri yükleniyor... Lütfen bekleyin.");
+      
+      // Tüm bakiyeleri ve müşteri bilgilerini getir
       const { data, error } = await supabase
         .from('customer_balances')
         .select(`
@@ -38,18 +45,23 @@ const PaymentList = () => {
           customers (
             id, name, code, sector_code
           )
-        `);
+        `)
+        .limit(100000); // Çok daha yüksek bir limit belirledik
       
       if (error) throw error;
       
       if (!data || data.length === 0) {
         setBalances([]);
-        setStats({ total: 0, displayed: 0 });
+        setStats({ total: 0, displayed: 0, allRecordsCount: 0 });
         setLoading(false);
         return;
       }
       
-      console.log(`${data.length} adet bakiye kaydı bulundu`);
+      // Hata ayıklama bilgisi
+      console.log(`Veritabanından ${data.length} adet bakiye kaydı getirildi`);
+      
+      // Tüm kayıtları sakla (Excel dışa aktarımı için)
+      setAllRecords(data);
       
       // Bugünün tarihi
       const today = new Date();
@@ -57,6 +69,8 @@ const PaymentList = () => {
       
       // Vade aralığı için bitiş tarihi
       const futureDate = addDays(today, dateRange);
+      
+      let nonZeroBalanceCount = 0;
       
       // Gösterilecek bakiyeleri filtrele
       let filteredBalances = [];
@@ -67,6 +81,22 @@ const PaymentList = () => {
         if (!balance.customers) return;
         
         try {
+          // Bakiye değerlerini sayısal olarak kontrol et
+          const pastDueBalance = parseFloat(balance.past_due_balance || 0);
+          const notDueBalance = parseFloat(balance.not_due_balance || 0);
+          const totalBalance = parseFloat(balance.total_balance || 0) || (pastDueBalance + notDueBalance);
+          
+          // Sıfır olmayan toplam bakiyeleri say
+          if (Math.abs(totalBalance) >= 0.01) {
+            nonZeroBalanceCount++;
+          }
+          
+          // Toplam bakiye sıfır veya çok küçük miktarsa kayıtı tamamen atla 
+          // (yuvarlama hatalarını önlemek için 0.01'den küçük kontrol ediyoruz)
+          if (Math.abs(totalBalance) < 0.01) {
+            return;
+          }
+          
           // Vade tarihlerini kontrol et
           let isPastDue = false;  // Vadesi geçmiş mi
           let isUpcoming = false; // Yaklaşan vade mi
@@ -119,22 +149,37 @@ const PaymentList = () => {
           }
           
           // 4. Filtreleme tipine göre gösterilecekleri belirle
-          const shouldInclude = 
-            filterType === 'all' || 
-            (filterType === 'upcoming' && isUpcoming) || 
-            (filterType === 'overdue' && isPastDue);
+          let shouldInclude = false;
+          
+          if (filterType === 'all') {
+            shouldInclude = true;
+          } else if (filterType === 'upcoming') {
+            // Yaklaşan vadesi olan ve bakiyesi pozitif olan
+            if (isUpcoming) {
+              // Yaklaşan vadeler için: 
+              // - Vadesi geçmemiş bakiyesi varsa (vadesi geçmemiş pozitif bakiye)
+              // - veya toplam bakiyesi varsa (herhangi bir bakiye türü)
+              shouldInclude = (notDueBalance > 0) || (totalBalance > 0);
+            }
+          } else if (filterType === 'overdue') {
+            // Vadesi geçmiş ve vadesi geçmiş bakiyesi olan kayıtlar
+            shouldInclude = isPastDue && pastDueBalance > 0;
+            
+            // Vade tarihi belirsiz ama vadesi geçmiş bakiyesi olan kayıtlar 
+            if (!isPastDue && !effectiveDueDate && pastDueBalance > 0) {
+              shouldInclude = true;
+              isPastDue = true; // Vade tarihi olmayan ama vadesi geçen bakiyesi olanlar 
+            }
+          }
           
           if (shouldInclude) {
-            // Bakiye bilgilerini hesapla
-            const pastDueBalance = parseFloat(balance.past_due_balance || 0);
-            const notDueBalance = parseFloat(balance.not_due_balance || 0);
-            const totalBalance = parseFloat(balance.total_balance || 0) || (pastDueBalance + notDueBalance);
-            
             filteredBalances.push({
               ...balance,
               effective_due_date: effectiveDueDate ? effectiveDueDate.toISOString() : null,
               is_past_due: isPastDue,
               is_upcoming: isUpcoming,
+              calculated_past_due: pastDueBalance,
+              calculated_not_due: notDueBalance,
               calculated_total: totalBalance
             });
           }
@@ -163,14 +208,16 @@ const PaymentList = () => {
       
       // İstatistikleri güncelle
       setStats({
-        total: data.length,
-        displayed: filteredBalances.length
+        total: nonZeroBalanceCount,
+        displayed: filteredBalances.length,
+        allRecordsCount: data.length
       });
       
       // Bakiyeleri ayarla
       setBalances(filteredBalances);
       
       console.log(`${filteredBalances.length} adet bakiye filtrelendi`);
+      console.log(`Sıfır olmayan bakiye: ${nonZeroBalanceCount}`);
     } catch (err) {
       console.error("Veri çekerken hata:", err);
       setError(err.message);
@@ -188,7 +235,8 @@ const PaymentList = () => {
   // Gösterilecek status badge'i belirle
   const getStatusBadge = (balance) => {
     if (!balance.effective_due_date) {
-      return { text: 'Belirsiz', class: 'badge-info' };
+      // Vade tarihi belirsiz olan kayıtları vadesi geçmiş olarak işaretle
+      return { text: 'Vadesi Geçmiş (Belirsiz)', class: 'badge-danger' };
     }
     
     const dueDate = new Date(balance.effective_due_date);
@@ -215,6 +263,104 @@ const PaymentList = () => {
     }
     
     return { text: 'Normal', class: 'badge-info' };
+  };
+
+  // Para birimi formatla
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('tr-TR', { 
+      style: 'currency', 
+      currency: 'TRY' 
+    }).format(Math.abs(amount || 0));
+  };
+  
+  // Excel dosyasına aktarma fonksiyonu
+  const exportToExcel = (exportType) => {
+    setExporting(true);
+    try {
+      let dataToExport = [];
+      let filename = '';
+      
+      // Hangi verileri dışa aktaracağımızı belirle
+      if (exportType === 'filtered') {
+        dataToExport = balances;
+        filename = `vade-takip-${filterType}-${new Date().toISOString().slice(0,10)}.xlsx`;
+      } else if (exportType === 'all') {
+        dataToExport = allRecords;
+        filename = `vade-takip-tum-veriler-${new Date().toISOString().slice(0,10)}.xlsx`;
+      }
+      
+      // Veri yoksa uyarı göster ve çık
+      if (dataToExport.length === 0) {
+        toast.warning('Dışa aktarılacak veri bulunamadı');
+        setExporting(false);
+        return;
+      }
+      
+      // Excel formatına dönüştürülecek veriyi hazırla
+      const excelData = dataToExport.map(row => {
+        // Vade tarihini formatla
+        let effectiveDueDate = '-';
+        if (row.effective_due_date) {
+          effectiveDueDate = format(new Date(row.effective_due_date), 'dd.MM.yyyy', { locale: tr });
+        } else if (row.past_due_date) {
+          effectiveDueDate = format(new Date(row.past_due_date), 'dd.MM.yyyy', { locale: tr });
+        } else if (row.not_due_date) {
+          effectiveDueDate = format(new Date(row.not_due_date), 'dd.MM.yyyy', { locale: tr });
+        }
+        
+        // Bakiyeler
+        const pastDueBalance = parseFloat(row.past_due_balance || row.calculated_past_due || 0);
+        const notDueBalance = parseFloat(row.not_due_balance || row.calculated_not_due || 0);
+        const totalBalance = parseFloat(row.total_balance || row.calculated_total || 0) || (pastDueBalance + notDueBalance);
+        
+        // Veri satırını oluştur
+        return {
+          'Müşteri Kodu': row.customers?.code || '-',
+          'Müşteri Adı': row.customers?.name || '-',
+          'Sektör': row.customers?.sector_code || '-',
+          'Vade Tarihi': effectiveDueDate,
+          'Vadesi Geçmiş Bakiye': pastDueBalance,
+          'Vadesi Geçmemiş Bakiye': notDueBalance,
+          'Toplam Bakiye': totalBalance,
+          'Bakiyesi Sıfır mı': Math.abs(totalBalance) < 0.01 ? 'Evet' : 'Hayır',
+          'Past Due Date': row.past_due_date || '-',
+          'Not Due Date': row.not_due_date || '-',
+          'Due Date': row.due_date || '-'
+        };
+      });
+      
+      // Excel çalışma kitabı oluştur
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Vade Takip');
+      
+      // Otomatik sütun genişlikleri ayarla
+      const maxWidth = excelData.reduce((w, r) => Math.max(w, r['Müşteri Adı']?.length || 0), 10);
+      const colWidths = [
+        { wch: 15 }, // Müşteri Kodu
+        { wch: maxWidth }, // Müşteri Adı
+        { wch: 12 }, // Sektör
+        { wch: 12 }, // Vade Tarihi
+        { wch: 18 }, // Vadesi Geçmiş Bakiye
+        { wch: 18 }, // Vadesi Geçmemiş Bakiye
+        { wch: 15 }, // Toplam Bakiye
+        { wch: 15 }, // Bakiyesi Sıfır mı
+        { wch: 12 }, // Past Due Date
+        { wch: 12 }, // Not Due Date
+        { wch: 12 }  // Due Date
+      ];
+      worksheet['!cols'] = colWidths;
+      
+      // Excel dosyasını indir
+      XLSX.writeFile(workbook, filename);
+      
+      toast.success('Excel dosyası oluşturuldu ve indirildi');
+    } catch (err) {
+      console.error('Excel dışa aktarma hatası:', err);
+      toast.error('Excel dosyası oluşturulurken bir hata oluştu');
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Hata durumunda göster
@@ -331,16 +477,41 @@ const PaymentList = () => {
         </div>
       )}
       
-      {/* Basit bilgi kartı */}
-      <div className="card" style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa' }}>
-        <p>
-          <strong>Toplam Kayıt:</strong> {stats.total} | 
-          <strong> Gösterilen:</strong> {stats.displayed} | 
-          <strong> Filtre:</strong> {
-            filterType === 'upcoming' ? 'Yaklaşanlar' : 
-            filterType === 'overdue' ? 'Vadesi Geçmiş' : 'Tümü'
-          }
-        </p>
+      {/* Excel'e aktar butonları */}
+      <div className="card" style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#eaf7ff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+          <div>
+            <p>
+              <strong>Veritabanındaki Toplam Kayıt:</strong> {stats.allRecordsCount} | 
+              <strong> Sıfır Olmayan Bakiye:</strong> {stats.total} | 
+              <strong> Gösterilen:</strong> {stats.displayed} | 
+              <strong> Filtre:</strong> {
+                filterType === 'upcoming' ? 'Yaklaşanlar' : 
+                filterType === 'overdue' ? 'Vadesi Geçmiş' : 'Tümü'
+              }
+            </p>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button 
+              onClick={() => exportToExcel('filtered')} 
+              className="btn btn-success"
+              disabled={exporting || balances.length === 0}
+              style={{ padding: '6px 12px' }}
+            >
+              {exporting ? 'İndiriliyor...' : 'Filtrelenmiş Verileri İndir'}
+            </button>
+            
+            <button 
+              onClick={() => exportToExcel('all')} 
+              className="btn"
+              disabled={exporting || allRecords.length === 0}
+              style={{ padding: '6px 12px', backgroundColor: '#f39c12', color: 'white' }}
+            >
+              {exporting ? 'İndiriliyor...' : 'Tüm Verileri İndir'}
+            </button>
+          </div>
+        </div>
       </div>
       
       {loading ? (
@@ -348,57 +519,65 @@ const PaymentList = () => {
       ) : (
         <div className="card">
           {balances.length > 0 ? (
-            <table>
-              <thead>
-                <tr>
-                  <th>Müşteri</th>
-                  <th>Vade Tarihi</th>
-                  <th>Bakiye</th>
-                  <th>Durum</th>
-                  <th>İşlemler</th>
-                </tr>
-              </thead>
-              <tbody>
-                {balances.map((balance) => {
-                  const status = getStatusBadge(balance);
-                  const formattedBalance = new Intl.NumberFormat('tr-TR', { 
-                    style: 'currency', 
-                    currency: 'TRY' 
-                  }).format(Math.abs(balance.calculated_total || 0));
+            <div style={{ overflowX: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Müşteri</th>
+                    <th>Vade Tarihi</th>
+                    <th>Vadesi Geçmiş Bakiye</th>
+                    <th>Vadesi Geçmemiş Bakiye</th>
+                    <th>Toplam Bakiye</th>
+                    <th>Durum</th>
+                    <th>İşlemler</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {balances.map((balance) => {
+                    const status = getStatusBadge(balance);
 
-                  return (
-                    <tr key={balance.id}>
-                      <td>
-                        <div style={{ fontWeight: 'bold' }}>
-                          {balance.customers?.name || '-'}
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#888' }}>
-                          {balance.customers?.code || '-'}
-                        </div>
-                      </td>
-                      <td>
-                        {balance.effective_due_date
-                          ? format(new Date(balance.effective_due_date), 'dd.MM.yyyy', { locale: tr })
-                          : '-'}
-                      </td>
-                      <td>{formattedBalance}</td>
-                      <td>
-                        <span className={`badge ${status.class}`}>{status.text}</span>
-                      </td>
-                      <td>
-                        <Link
-                          to={`/customers/${balance.customer_id}`}
-                          className="btn btn-primary"
-                          style={{ padding: '4px 8px', fontSize: '12px' }}
-                        >
-                          Detay
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                    return (
+                      <tr key={balance.id}>
+                        <td>
+                          <div style={{ fontWeight: 'bold' }}>
+                            {balance.customers?.name || '-'}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#888' }}>
+                            {balance.customers?.code || '-'}
+                          </div>
+                        </td>
+                        <td>
+                          {balance.effective_due_date
+                            ? format(new Date(balance.effective_due_date), 'dd.MM.yyyy', { locale: tr })
+                            : '-'}
+                        </td>
+                        <td style={{ color: balance.calculated_past_due > 0 ? '#e74c3c' : 'inherit' }}>
+                          {formatCurrency(balance.calculated_past_due)}
+                        </td>
+                        <td>
+                          {formatCurrency(balance.calculated_not_due)}
+                        </td>
+                        <td style={{ fontWeight: 'bold' }}>
+                          {formatCurrency(balance.calculated_total)}
+                        </td>
+                        <td>
+                          <span className={`badge ${status.class}`}>{status.text}</span>
+                        </td>
+                        <td>
+                          <Link
+                            to={`/customers/${balance.customer_id}`}
+                            className="btn btn-primary"
+                            style={{ padding: '4px 8px', fontSize: '12px' }}
+                          >
+                            Detay
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
               <p style={{ marginBottom: '20px' }}>

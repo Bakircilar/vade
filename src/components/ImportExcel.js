@@ -128,20 +128,32 @@ const ImportExcel = () => {
     });
   };
 
-  // Excel değerini sayıya çevirme yardımcı fonksiyonu
+  // Geliştirilmiş Excel değerini sayıya çevirme fonksiyonu
   const parseNumericValue = (value) => {
     if (value === null || value === undefined || value === '') return 0;
     
-    // Virgül yerine nokta kullanarak sayıya çevir
-    let parsedValue;
-    if (typeof value === 'string') {
-      // Bin ayırıcı (.) varsa kaldır, ondalık ayırıcıyı (,) ile değiştir
-      parsedValue = value.replace(/\./g, '').replace(',', '.');
-    } else {
-      parsedValue = value;
+    // Zaten sayısal değerse doğrudan döndür
+    if (typeof value === 'number') return value;
+    
+    let strValue = String(value).trim();
+    
+    // Türkçe formatı kontrol et (1.234,56 şeklinde)
+    if (/^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/.test(strValue)) {
+      // Binlik ayırıcıları kaldır, virgülü noktaya çevir
+      strValue = strValue.replace(/\./g, '').replace(',', '.');
+    } 
+    // İngilizce formatı kontrol et (1,234.56 şeklinde)
+    else if (/^-?\d{1,3}(?:,\d{3})*(?:\.\d+)?$/.test(strValue)) {
+      // Binlik ayırıcıları kaldır
+      strValue = strValue.replace(/,/g, '');
+    }
+    // Tek virgüllü format (1234,56 şeklinde)
+    else if (/^-?\d+,\d+$/.test(strValue)) {
+      // Virgülü noktaya çevir
+      strValue = strValue.replace(',', '.');
     }
     
-    const result = parseFloat(parsedValue);
+    const result = parseFloat(strValue);
     return isNaN(result) ? 0 : result;
   };
   
@@ -266,18 +278,36 @@ const ImportExcel = () => {
         refDate = parseDateValue(row[refDateIndex]);
       }
       
+      // Sektör kodunu al
+      const sectorCode = sectorIndex !== -1 && row[sectorIndex] ? row[sectorIndex].toString().trim() : null;
+      
       // Bakiye değerlerini sayıya çevir
+      // Excel'den gelen değerler olduğu gibi korunuyor (negatif/pozitif)
+      // Debug için orijinal değerleri loglayalım
+      console.log(`Satır ${i} Bakiye Değerleri:`, {
+        pastDue: row[pastDueBalanceIndex],
+        notDue: row[notDueBalanceIndex],
+        total: row[totalBalanceIndex]
+      });
+      
       const pastDueBalance = pastDueBalanceIndex !== -1 ? parseNumericValue(row[pastDueBalanceIndex]) : 0;
       const notDueBalance = notDueBalanceIndex !== -1 ? parseNumericValue(row[notDueBalanceIndex]) : 0;
       const totalBalance = totalBalanceIndex !== -1 ? parseNumericValue(row[totalBalanceIndex]) : 0;
       const valor = valorIndex !== -1 ? parseInt(parseNumericValue(row[valorIndex]) || 0) : 0;
+      
+      // Çevrilen değerleri loglayalım
+      console.log(`Satır ${i} Çevrilen Bakiyeler:`, {
+        pastDue: pastDueBalance,
+        notDue: notDueBalance,
+        total: totalBalance
+      });
       
       // Müşteri ve bakiye verisini oluştur
       customers[customerCode] = {
         customer: {
           code: customerCode,
           name: row[nameIndex] ? row[nameIndex].toString().trim() : '',
-          sector_code: sectorIndex !== -1 && row[sectorIndex] ? row[sectorIndex].toString().trim() : null,
+          sector_code: sectorCode,
           group_code: groupIndex !== -1 && row[groupIndex] ? row[groupIndex].toString().trim() : null,
           region_code: regionIndex !== -1 && row[regionIndex] ? row[regionIndex].toString().trim() : null,
           payment_term: paymentTermIndex !== -1 && row[paymentTermIndex] ? row[paymentTermIndex].toString().trim() : null

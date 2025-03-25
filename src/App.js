@@ -26,6 +26,7 @@ function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState('user'); // Varsayılan rol
+  const [isMuhasebe, setIsMuhasebe] = useState(false); // Muhasebe rolü kontrolü
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -45,6 +46,7 @@ function App() {
         fetchUserRole(session.user.id);
       } else {
         setUserRole('user');
+        setIsMuhasebe(false);
         setLoading(false);
       }
     });
@@ -64,12 +66,14 @@ function App() {
         if (error) {
           console.log("profiles tablosu bulunamadı veya erişilemedi:", error);
           setUserRole('user');
+          setIsMuhasebe(false);
           setLoading(false);
           return;
         }
       } catch (err) {
         console.log("profiles tablosu kontrolünde hata:", err);
         setUserRole('user');
+        setIsMuhasebe(false);
         setLoading(false);
         return;
       }
@@ -85,7 +89,11 @@ function App() {
       }
 
       // Varsayılan olarak "user" rolu ver, ya da veritabanından gelen rolü al
-      setUserRole(data?.role || 'user');
+      const role = data?.role || 'user';
+      setUserRole(role);
+      
+      // Muhasebe rolünü kontrol et
+      setIsMuhasebe(role === 'muhasebe');
     } catch (error) {
       console.error('Rol getirme hatası:', error);
     } finally {
@@ -95,6 +103,7 @@ function App() {
 
   // Yönetici kontrolü
   const isAdmin = userRole === 'admin';
+  const isMuhasebeUser = userRole === 'muhasebe';
 
   if (loading) {
     return <div className="loading">Yükleniyor...</div>;
@@ -105,7 +114,7 @@ function App() {
       <div className="app">
         <Header session={session} userRole={userRole} />
         <div className="container">
-          {session && <Navigation userRole={userRole} />}
+          {session && <Navigation userRole={userRole} isMuhasebe={isMuhasebe} />}
           <main className="content">
             <Routes>
               <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />
@@ -115,7 +124,7 @@ function App() {
               <Route path="/payments/:id" element={session ? <PaymentDetail /> : <Navigate to="/login" />} />
               <Route path="/import" element={session ? <ImportExcel /> : <Navigate to="/login" />} />
               <Route path="/profile" element={session ? <Profile /> : <Navigate to="/login" />} />
-              <Route path="/user-assignments" element={session && isAdmin ? <UserAssignments /> : <Navigate to="/" />} />
+              <Route path="/user-assignments" element={session && (isAdmin || isMuhasebeUser) ? <UserAssignments /> : <Navigate to="/" />} />
               <Route path="/auth-manager" element={session && isAdmin ? <AuthManager /> : <Navigate to="/" />} />
               <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
             </Routes>
