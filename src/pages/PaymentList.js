@@ -1,283 +1,238 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-import { format, differenceInDays, addDays } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { toast } from 'react-toastify';
 
 const PaymentList = () => {
-  // Müşteri/Tedarikçi seçimi için state
-  const [viewMode, setViewMode] = useState('customer'); // 'customer' veya 'supplier'
+  // URL parametre değerlerini al
+  const [searchParams] = useSearchParams();
+  const filterType = searchParams.get('filter') || 'all';
   
   const [balances, setBalances] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchParams] = useSearchParams();
-  const filterType = searchParams.get('filter') || 'all';
+  const [error, setError] = useState(null);
   const [dateRange, setDateRange] = useState(30); // Yaklaşan vadeler için 30 gün
-  const [debug, setDebug] = useState({
-    filterType: filterType,
-    viewMode: 'customer',
-    dataCount: 0,
-    filteredCount: 0,
-    dateRange: 30,
-    examples: [],
-    customerCount: 0,
-    supplierCount: 0
-  });
   
-  // Görünüm modunu değiştirme fonksiyonu
-  const toggleViewMode = (mode) => {
-    setViewMode(mode);
-    setDebug(prev => ({ ...prev, viewMode: mode }));
+  // İstatistikler
+  const [stats, setStats] = useState({
+    total: 0,
+    displayed: 0
+  });
+
+  // Vade aralığını değiştirme fonksiyonu
+  const handleDateRangeChange = (days) => {
+    setDateRange(days);
   };
 
-  const fetchBalances = useCallback(async () => {
+  // Veri getirme fonksiyonu
+  const fetchData = async () => {
     setLoading(true);
-    setDebug(prev => ({ ...prev, overdueItems: [] }));
-    
     try {
-      console.log("Filtre tipi:", filterType);
-      console.log("Görünüm modu:", viewMode);
-      
-      // Tüm bakiyeleri müşteri bilgileriyle birlikte getir
+      // Tüm bakiyeleri ve müşteri bilgilerini getir - basit sorgu
       const { data, error } = await supabase
         .from('customer_balances')
         .select(`
           *,
           customers (
-            id,
-            code,
-            name,
-            sector_code,
-            group_code,
-            region_code
+            id, name, code, sector_code
           )
         `);
-
+      
       if (error) throw error;
-
+      
       if (!data || data.length === 0) {
         setBalances([]);
+        setStats({ total: 0, displayed: 0 });
         setLoading(false);
         return;
       }
       
-      // Tarihleri ve bakiyeleri normalleştir
-      const normalizedData = data.map(item => {
-        // Eski ve yeni vade tarihi alanlarını kontrol et
-        // Geriye dönük uyumluluk - eski verilerde due_date var ama past_due_date yok
-        const hasDueDate = item.due_date !== null && item.due_date !== undefined;
-        const hasPastDueDate = item.past_due_date !== null && item.past_due_date !== undefined;
-        const hasNotDueDate = item.not_due_date !== null && item.not_due_date !== undefined;
-        
-        // Eski sistemde kullanılan due_date değerini past_due_date'e kopyala
-        const pastDueDate = hasPastDueDate && item.past_due_date ? item.past_due_date : 
-                           (hasDueDate && item.due_date ? item.due_date : null);
-        
-        // Bakiyeleri normalleştir
-        const pastDueBalance = parseFloat(item.past_due_balance) || 0;
-        const notDueBalance = parseFloat(item.not_due_balance) || 0;
-        const totalBalance = parseFloat(item.total_balance) || 0;
-        
-        // Hesaplanan toplam bakiye
-        const calculatedTotalBalance = (pastDueBalance + notDueBalance) !== 0 ? 
-                                     (pastDueBalance + notDueBalance) : totalBalance;
-        
-        return {
-          ...item,
-          past_due_date: pastDueDate,
-          not_due_date: hasNotDueDate && item.not_due_date ? item.not_due_date : null,
-          past_due_balance: pastDueBalance,
-          not_due_balance: notDueBalance,
-          calculated_total_balance: calculatedTotalBalance
-        };
-      });
+      console.log(`${data.length} adet bakiye kaydı bulundu`);
       
-      // Müşteri/Tedarikçi ayrımı yap - TOPLAM BAKİYE işaretine göre
-      const customerData = normalizedData.filter(item => item.calculated_total_balance > 0);
-      const supplierData = normalizedData.filter(item => item.calculated_total_balance < 0);
-      
-      // Aktif veri seti (müşteri veya tedarikçi)
-      const activeData = viewMode === 'customer' ? customerData : supplierData;
-      
-      // Debug için ilk birkaç örneği al
-      const examples = activeData.slice(0, 5).map(item => ({
-        customer: item.customers?.name || 'İsimsiz',
-        due_date: item.due_date || 'Eski vade tarihi yok',
-        past_due_date: item.past_due_date || 'Vadesi geçen tarih yok',
-        not_due_date: item.not_due_date || 'Vadesi geçmeyen tarih yok',
-        past_due_balance: item.past_due_balance,
-        not_due_balance: item.not_due_balance,
-        total_balance: item.total_balance,
-        calculated_total_balance: item.calculated_total_balance
-      }));
-      
-      setDebug(prev => ({ 
-        ...prev, 
-        dataCount: data.length,
-        customerCount: customerData.length,
-        supplierCount: supplierData.length,
-        examples
-      }));
-
-      // Bugünkü tarih
+      // Bugünün tarihi
       const today = new Date();
-      today.setHours(0, 0, 0, 0); // Bugünün başlangıcı (saat 00:00:00)
+      today.setHours(0, 0, 0, 0);
       
-      // Filtreleme için tarihler
-      const futureDate = addDays(today, dateRange); // Yaklaşan vadeler için X gün sonrası
+      // Vade aralığı için bitiş tarihi
+      const futureDate = addDays(today, dateRange);
       
-      // Debug için tarih aralığı
-      console.log("Bugün:", today.toISOString().split('T')[0]);
-      console.log("Bitiş tarihi:", futureDate.toISOString().split('T')[0]);
-      
-      setDebug(prev => ({ 
-        ...prev, 
-        dateRange,
-        today: today.toISOString().split('T')[0],
-        futureDate: futureDate.toISOString().split('T')[0]
-      }));
-
-      // Filtrele
+      // Gösterilecek bakiyeleri filtrele
       let filteredBalances = [];
       
-      if (filterType === 'upcoming') {
-        // Yaklaşan vadeleri filtrele - Her iki vade tarihini de kontrol et
-        filteredBalances = activeData.filter(balance => {
-          // Eski due_date VEYA yeni past_due_date ve not_due_date'e bakarak filtreleme yap
-          const dueDate = balance.due_date ? new Date(balance.due_date) : null;
-          const pastDueDate = balance.past_due_date ? new Date(balance.past_due_date) : null;
-          const notDueDate = balance.not_due_date ? new Date(balance.not_due_date) : null;
+      // Her bakiye için işlem yap
+      data.forEach(balance => {
+        // Müşteri bilgisi yoksa atla
+        if (!balance.customers) return;
+        
+        try {
+          // Vade tarihlerini kontrol et
+          let isPastDue = false;  // Vadesi geçmiş mi
+          let isUpcoming = false; // Yaklaşan vade mi
+          let effectiveDueDate = null; // Gösterilecek vade tarihi
           
-          // Tarihler için saat kısmını sıfırla
-          if (dueDate) dueDate.setHours(0, 0, 0, 0);
-          if (pastDueDate) pastDueDate.setHours(0, 0, 0, 0);
-          if (notDueDate) notDueDate.setHours(0, 0, 0, 0);
-          
-          // Herhangi bir vade tarihi yaklaşan mı? (due_date'den veya past_due_date'den)
-          const isDueInRange = dueDate && dueDate >= today && dueDate <= futureDate;
-          const isPastDueInRange = pastDueDate && pastDueDate >= today && pastDueDate <= futureDate;
-          const isNotDueInRange = notDueDate && notDueDate >= today && notDueDate <= futureDate;
-          
-          // Vade yaklaşıyor mu? (eski veya yeni format)
-          return isDueInRange || isPastDueInRange || isNotDueInRange;
-        });
-      } else if (filterType === 'overdue') {
-        // Vadesi geçenleri filtrele - Eski due_date VEYA yeni past_due_date'e bakıyoruz
-        filteredBalances = activeData.filter(balance => {
-          const dueDate = balance.due_date ? new Date(balance.due_date) : null;
-          const pastDueDate = balance.past_due_date ? new Date(balance.past_due_date) : null;
-          
-          // Tarihler için saat kısmını sıfırla
-          if (dueDate) dueDate.setHours(0, 0, 0, 0);
-          if (pastDueDate) pastDueDate.setHours(0, 0, 0, 0);
-          
-          // Vadesi geçmiş mi? (due_date veya past_due_date'den herhangi biri)
-          const isDueOverdue = dueDate && dueDate < today;
-          const isPastDueOverdue = pastDueDate && pastDueDate < today;
-          const isOverdue = isDueOverdue || isPastDueOverdue;
-          
-          // Debug için vadesi geçen örnekleri ekle
-          if (isOverdue) {
-            setDebug(prev => ({
-              ...prev, 
-              overdueItems: [...(prev.overdueItems || []), {
-                customer: balance.customers?.name,
-                due_date: balance.due_date,
-                past_due_date: balance.past_due_date,
-                today: today.toISOString().split('T')[0],
-                isDueOverdue,
-                isPastDueOverdue,
-                past_due_balance: balance.past_due_balance
-              }]
-            }));
+          // 1. Vadesi geçen bakiye tarihi kontrolü
+          if (balance.past_due_date) {
+            const pastDueDate = new Date(balance.past_due_date);
+            pastDueDate.setHours(0, 0, 0, 0);
+            
+            if (pastDueDate < today) {
+              // Vadesi geçmiş
+              isPastDue = true;
+              effectiveDueDate = pastDueDate;
+            } else if (pastDueDate >= today && pastDueDate <= futureDate) {
+              // Yaklaşan vadeli
+              isUpcoming = true;
+              effectiveDueDate = pastDueDate;
+            }
           }
           
-          // Sadece vadesi geçmiş olanları göster
-          return isOverdue;
-        });
-      } else {
-        // "Tümü" filtresi için tüm kayıtları göster
-        filteredBalances = activeData;
-      }
-
-      setDebug(prev => ({ 
-        ...prev, 
-        filteredCount: filteredBalances.length 
-      }));
-
-      // Vade tarihine göre sırala
-      filteredBalances.sort((a, b) => {
-        // Her kayıt için en uygun vade tarihini belirle (eski veya yeni format)
-        const getEffectiveDueDate = (balance) => {
-          // Öncelik past_due_date'e, sonra due_date'e
-          if (balance.past_due_date) return new Date(balance.past_due_date);
-          if (balance.due_date) return new Date(balance.due_date);
-          if (balance.not_due_date) return new Date(balance.not_due_date);
-          return null;
-        };
-        
-        const aDate = getEffectiveDueDate(a);
-        const bDate = getEffectiveDueDate(b);
-        
-        if (!aDate) return 1;
-        if (!bDate) return -1;
-        return aDate - bDate;
+          // 2. Vadesi geçmeyen bakiye tarihi kontrolü 
+          if (balance.not_due_date) {
+            const notDueDate = new Date(balance.not_due_date);
+            notDueDate.setHours(0, 0, 0, 0);
+            
+            // Yakın vadeli mi?
+            if (notDueDate >= today && notDueDate <= futureDate) {
+              isUpcoming = true;
+              
+              // Eğer önceki tarihten daha yakınsa bu tarihi kullan
+              if (!effectiveDueDate || notDueDate < effectiveDueDate) {
+                effectiveDueDate = notDueDate;
+              }
+            }
+          }
+          
+          // 3. Eski due_date alanı kontrolü
+          if (balance.due_date && !effectiveDueDate) {
+            const dueDate = new Date(balance.due_date);
+            dueDate.setHours(0, 0, 0, 0);
+            
+            if (dueDate < today) {
+              isPastDue = true;
+              effectiveDueDate = dueDate;
+            } else if (dueDate >= today && dueDate <= futureDate) {
+              isUpcoming = true;
+              effectiveDueDate = dueDate;
+            }
+          }
+          
+          // 4. Filtreleme tipine göre gösterilecekleri belirle
+          const shouldInclude = 
+            filterType === 'all' || 
+            (filterType === 'upcoming' && isUpcoming) || 
+            (filterType === 'overdue' && isPastDue);
+          
+          if (shouldInclude) {
+            // Bakiye bilgilerini hesapla
+            const pastDueBalance = parseFloat(balance.past_due_balance || 0);
+            const notDueBalance = parseFloat(balance.not_due_balance || 0);
+            const totalBalance = parseFloat(balance.total_balance || 0) || (pastDueBalance + notDueBalance);
+            
+            filteredBalances.push({
+              ...balance,
+              effective_due_date: effectiveDueDate ? effectiveDueDate.toISOString() : null,
+              is_past_due: isPastDue,
+              is_upcoming: isUpcoming,
+              calculated_total: totalBalance
+            });
+          }
+        } catch (err) {
+          console.error("Bakiye işleme hatası:", err, balance);
+        }
       });
-
+      
+      // Tarihe göre sırala
+      filteredBalances.sort((a, b) => {
+        if (!a.effective_due_date && !b.effective_due_date) return 0;
+        if (!a.effective_due_date) return 1;
+        if (!b.effective_due_date) return -1;
+        
+        const aDate = new Date(a.effective_due_date);
+        const bDate = new Date(b.effective_due_date);
+        
+        if (filterType === 'overdue') {
+          // Vadesi en çok geçenler önce
+          return aDate - bDate;
+        } else {
+          // En yakın vadeler önce
+          return aDate - bDate;
+        }
+      });
+      
+      // İstatistikleri güncelle
+      setStats({
+        total: data.length,
+        displayed: filteredBalances.length
+      });
+      
+      // Bakiyeleri ayarla
       setBalances(filteredBalances);
-    } catch (error) {
-      toast.error('Vade bilgileri yüklenirken bir hata oluştu');
-      console.error('Error loading balances:', error);
-      setDebug(prev => ({ ...prev, error: error.message }));
+      
+      console.log(`${filteredBalances.length} adet bakiye filtrelendi`);
+    } catch (err) {
+      console.error("Veri çekerken hata:", err);
+      setError(err.message);
+      toast.error("Veriler yüklenirken hata oluştu");
     } finally {
       setLoading(false);
     }
-  }, [filterType, dateRange, viewMode]); // viewMode değişikliğinde verileri yeniden yükle
-
-  useEffect(() => {
-    fetchBalances();
-  }, [fetchBalances]);
-
-  const handleDateRangeChange = (days) => {
-    setDateRange(days);
   };
 
-  // Vade tarihini ve kalan günü hesapla (eski veya yeni format)
-  const calculateDueInfo = (balance) => {
+  // İlk yükleme ve filtre değişikliğinde verileri getir
+  useEffect(() => {
+    fetchData();
+  }, [filterType, dateRange]);
+
+  // Gösterilecek status badge'i belirle
+  const getStatusBadge = (balance) => {
+    if (!balance.effective_due_date) {
+      return { text: 'Belirsiz', class: 'badge-info' };
+    }
+    
+    const dueDate = new Date(balance.effective_due_date);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Geçerli vade tarihini bul (öncelik past_due_date'de, sonra due_date'de)
-    let dueDate = null;
+    // Tarihler arasındaki farkı hesapla (gün olarak)
+    const diffTime = dueDate.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    // Önce past_due_date'i kontrol et
-    if (balance.past_due_date) {
-      dueDate = new Date(balance.past_due_date);
-    } 
-    // Sonra due_date'i kontrol et
-    else if (balance.due_date) {
-      dueDate = new Date(balance.due_date);
+    if (balance.is_past_due) {
+      return { 
+        text: `${Math.abs(diffDays)} gün gecikmiş`, 
+        class: 'badge-danger' 
+      };
+    } else if (balance.is_upcoming) {
+      if (diffDays === 0) {
+        return { text: 'Bugün', class: 'badge-warning' };
+      } else if (diffDays <= 2) {
+        return { text: `${diffDays} gün kaldı`, class: 'badge-warning' };
+      } else {
+        return { text: `${diffDays} gün kaldı`, class: 'badge-info' };
+      }
     }
-    // Son olarak not_due_date'i kontrol et
-    else if (balance.not_due_date) {
-      dueDate = new Date(balance.not_due_date);
-    }
     
-    if (!dueDate) {
-      return { date: null, daysLeft: null, isOverdue: false };
-    }
-    
-    dueDate.setHours(0, 0, 0, 0);
-    const daysLeft = differenceInDays(dueDate, today);
-    const isOverdue = dueDate < today;
-    
-    return {
-      date: dueDate,
-      daysLeft,
-      isOverdue
-    };
+    return { text: 'Normal', class: 'badge-info' };
   };
+
+  // Hata durumunda göster
+  if (error) {
+    return (
+      <div className="card" style={{ padding: '20px', backgroundColor: '#f8d7da', color: '#721c24' }}>
+        <h3>Bir hata oluştu!</h3>
+        <p>{error}</p>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="btn btn-warning"
+          style={{ marginTop: '10px' }}
+        >
+          Sayfayı Yenile
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -286,51 +241,41 @@ const PaymentList = () => {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: '20px'
+          marginBottom: '20px',
+          flexWrap: 'wrap',
+          gap: '10px'
         }}
       >
         <h1 style={{ fontSize: '24px', fontWeight: 'bold' }}>Vade Takip Listesi</h1>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          {/* Müşteri/Tedarikçi Seçimi */}
-          <button 
-            onClick={() => toggleViewMode('customer')}
-            className={`btn ${viewMode === 'customer' ? 'btn-primary' : ''}`}
-            style={{ padding: '6px 12px' }}
-          >
-            Müşteriler
-          </button>
-          <button 
-            onClick={() => toggleViewMode('supplier')}
-            className={`btn ${viewMode === 'supplier' ? 'btn-primary' : ''}`}
-            style={{ padding: '6px 12px' }}
-          >
-            Tedarikçiler
-          </button>
+        
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+          {/* Filter Selection */}
+          <div>
+            <Link
+              to="/payments"
+              className={`btn ${filterType === 'all' || !filterType ? 'btn-primary' : ''}`}
+              style={{ padding: '6px 12px' }}
+            >
+              Tümü
+            </Link>
+            <Link
+              to="/payments?filter=upcoming"
+              className={`btn ${filterType === 'upcoming' ? 'btn-primary' : ''}`}
+              style={{ padding: '6px 12px' }}
+            >
+              Yaklaşanlar
+            </Link>
+            <Link
+              to="/payments?filter=overdue"
+              className={`btn ${filterType === 'overdue' ? 'btn-primary' : ''}`}
+              style={{ padding: '6px 12px' }}
+            >
+              Vadesi Geçmiş
+            </Link>
+          </div>
           
-          {/* Filtre Seçimi */}
-          <Link
-            to="/payments"
-            className={`btn ${filterType === 'all' || !filterType ? 'btn-primary' : ''}`}
-            style={{ padding: '6px 12px' }}
-          >
-            Tümü
-          </Link>
-          <Link
-            to="/payments?filter=upcoming"
-            className={`btn ${filterType === 'upcoming' ? 'btn-primary' : ''}`}
-            style={{ padding: '6px 12px' }}
-          >
-            Yaklaşanlar
-          </Link>
-          <Link
-            to="/payments?filter=overdue"
-            className={`btn ${filterType === 'overdue' ? 'btn-primary' : ''}`}
-            style={{ padding: '6px 12px' }}
-          >
-            Vadesi Geçmiş
-          </Link>
           <button 
-            onClick={fetchBalances} 
+            onClick={fetchData} 
             className="btn"
             style={{ padding: '6px 12px' }}
             disabled={loading}
@@ -340,13 +285,13 @@ const PaymentList = () => {
         </div>
       </div>
       
-      {/* Yaklaşan ödemeler için tarih aralığı ayarı */}
+      {/* Date range for upcoming payments */}
       {filterType === 'upcoming' && (
         <div className="card" style={{ marginBottom: '20px', padding: '15px' }}>
           <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>
             Vade Aralığı Seçimi
           </h3>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <button 
               onClick={() => handleDateRangeChange(7)}
               className={`btn ${dateRange === 7 ? 'btn-primary' : ''}`}
@@ -386,78 +331,16 @@ const PaymentList = () => {
         </div>
       )}
       
-      {/* DEBUG BİLGİSİ */}
-      <div className="card" style={{ marginBottom: '20px', backgroundColor: '#f8f9fa', padding: '15px' }}>
-        <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>Debug Bilgisi</h3>
-        
-        <div style={{ marginBottom: '10px' }}>
-          <strong>Görünüm Modu:</strong> {viewMode === 'customer' ? 'Müşteriler' : 'Tedarikçiler'}
-        </div>
-        
-        <div style={{ marginBottom: '10px' }}>
-          <strong>Filtre Tipi:</strong> {debug.filterType || 'all'}
-        </div>
-        
-        <div style={{ marginBottom: '10px' }}>
-          <strong>Müşteri Sayısı:</strong> {debug.customerCount || 0}
-        </div>
-        
-        <div style={{ marginBottom: '10px' }}>
-          <strong>Tedarikçi Sayısı:</strong> {debug.supplierCount || 0}
-        </div>
-        
-        <div style={{ marginBottom: '10px' }}>
-          <strong>Toplam Veri Sayısı:</strong> {debug.dataCount || 0}
-        </div>
-        
-        <div style={{ marginBottom: '10px' }}>
-          <strong>Filtrelenmiş Veri Sayısı:</strong> {debug.filteredCount || 0}
-        </div>
-        
-        {filterType === 'upcoming' && (
-          <div style={{ marginBottom: '10px' }}>
-            <strong>Tarih Aralığı:</strong> {debug.today} - {debug.futureDate} ({dateRange} gün)
-          </div>
-        )}
-        
-        {debug.error && (
-          <div style={{ color: '#dc3545', marginBottom: '10px' }}>
-            <strong>Hata:</strong> {debug.error}
-          </div>
-        )}
-        
-        {filterType === 'overdue' && debug.overdueItems && debug.overdueItems.length > 0 && (
-          <div style={{ marginBottom: '10px' }}>
-            <strong>Vadesi Geçen Örnekler (İlk 5):</strong>
-            <ul style={{ marginTop: '5px', fontSize: '12px' }}>
-              {debug.overdueItems.slice(0, 5).map((item, idx) => (
-                <li key={idx} style={{ marginBottom: '5px' }}>
-                  {item.customer} - 
-                  Due Date: {item.due_date} - 
-                  Past Due Date: {item.past_due_date} - 
-                  Bakiye: {item.past_due_balance}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        
-        {debug.examples && debug.examples.length > 0 && (
-          <div>
-            <strong>İlk 5 veri örneği:</strong>
-            <ul style={{ marginTop: '5px', fontSize: '12px' }}>
-              {debug.examples.map((item, idx) => (
-                <li key={idx} style={{ marginBottom: '5px' }}>
-                  {item.customer} - 
-                  Due Date (eski): {item.due_date} - 
-                  Past Due Date: {item.past_due_date} - 
-                  Not Due Date: {item.not_due_date} - 
-                  Bakiye: {item.calculated_total_balance}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+      {/* Basit bilgi kartı */}
+      <div className="card" style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f8f9fa' }}>
+        <p>
+          <strong>Toplam Kayıt:</strong> {stats.total} | 
+          <strong> Gösterilen:</strong> {stats.displayed} | 
+          <strong> Filtre:</strong> {
+            filterType === 'upcoming' ? 'Yaklaşanlar' : 
+            filterType === 'overdue' ? 'Vadesi Geçmiş' : 'Tümü'
+          }
+        </p>
       </div>
       
       {loading ? (
@@ -468,31 +351,20 @@ const PaymentList = () => {
             <table>
               <thead>
                 <tr>
-                  <th>{viewMode === 'customer' ? 'Müşteri' : 'Tedarikçi'}</th>
+                  <th>Müşteri</th>
                   <th>Vade Tarihi</th>
-                  <th>Toplam Bakiye</th>
-                  <th>Vadesi Geçen</th>
-                  <th>Vade Durumu</th>
+                  <th>Bakiye</th>
+                  <th>Durum</th>
                   <th>İşlemler</th>
                 </tr>
               </thead>
               <tbody>
                 {balances.map((balance) => {
-                  // Vade bilgisini hesapla (eski veya yeni format)
-                  const dueInfo = calculateDueInfo(balance);
-                  
-                  let statusClass = 'badge-info';
-                  let statusText = 'Normal';
-
-                  if (dueInfo.daysLeft !== null) {
-                    if (dueInfo.daysLeft < 0) {
-                      statusClass = 'badge-danger';
-                      statusText = `${Math.abs(dueInfo.daysLeft)} gün gecikmiş`;
-                    } else if (dueInfo.daysLeft <= 5) {
-                      statusClass = 'badge-warning';
-                      statusText = dueInfo.daysLeft === 0 ? 'Bugün' : `${dueInfo.daysLeft} gün kaldı`;
-                    }
-                  }
+                  const status = getStatusBadge(balance);
+                  const formattedBalance = new Intl.NumberFormat('tr-TR', { 
+                    style: 'currency', 
+                    currency: 'TRY' 
+                  }).format(Math.abs(balance.calculated_total || 0));
 
                   return (
                     <tr key={balance.id}>
@@ -505,22 +377,13 @@ const PaymentList = () => {
                         </div>
                       </td>
                       <td>
-                        {dueInfo.date
-                          ? format(dueInfo.date, 'dd.MM.yyyy', { locale: tr })
+                        {balance.effective_due_date
+                          ? format(new Date(balance.effective_due_date), 'dd.MM.yyyy', { locale: tr })
                           : '-'}
                       </td>
+                      <td>{formattedBalance}</td>
                       <td>
-                        {balance.calculated_total_balance
-                          ? new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Math.abs(balance.calculated_total_balance))
-                          : '-'}
-                      </td>
-                      <td>
-                        {balance.past_due_balance && parseFloat(balance.past_due_balance) !== 0
-                          ? new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(Math.abs(balance.past_due_balance))
-                          : '-'}
-                      </td>
-                      <td>
-                        <span className={`badge ${statusClass}`}>{statusText}</span>
+                        <span className={`badge ${status.class}`}>{status.text}</span>
                       </td>
                       <td>
                         <Link
@@ -540,15 +403,15 @@ const PaymentList = () => {
             <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
               <p style={{ marginBottom: '20px' }}>
                 {filterType === 'upcoming' ? (
-                  `Belirtilen ${dateRange} günlük vade aralığında herhangi bir bakiye bulunamadı.`
+                  `Belirtilen ${dateRange} günlük vade aralığında kayıt bulunamadı.`
                 ) : filterType === 'overdue' ? (
-                  'Vadesi geçmiş bakiye bulunamadı.'
+                  'Vadesi geçmiş kayıt bulunamadı.'
                 ) : (
-                  'Bu filtreye uygun vade veya bakiye bilgisi bulunamadı.'
+                  'Kayıt bulunamadı.'
                 )}
               </p>
               <Link to="/import" className="btn btn-primary">
-                Excel Veri İçe Aktar
+                Excel Veri İçe Aktarma
               </Link>
             </div>
           )}

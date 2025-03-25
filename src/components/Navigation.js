@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 
-const Navigation = () => {
+const Navigation = ({ userRole }) => {
   const navStyle = {
     width: '240px',
     backgroundColor: '#fff',
@@ -24,8 +24,23 @@ const Navigation = () => {
     fontWeight: 'bold',
   };
 
+  const sectionStyle = {
+    marginTop: '20px',
+    paddingTop: '10px',
+    borderTop: '1px solid #eee',
+  };
+
+  const sectionTitleStyle = {
+    padding: '0 20px',
+    fontSize: '12px',
+    color: '#888',
+    textTransform: 'uppercase',
+    marginBottom: '10px',
+  };
+
   return (
     <nav style={navStyle}>
+      {/* Ana Menü Öğeleri */}
       <NavLink 
         to="/" 
         style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
@@ -54,6 +69,37 @@ const Navigation = () => {
       >
         Veri İçe Aktar
       </NavLink>
+      
+      {/* Hesap Bölümü */}
+      <div style={sectionStyle}>
+        <div style={sectionTitleStyle}>Hesap</div>
+        
+        <NavLink 
+          to="/profile" 
+          style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+        >
+          Profilim
+        </NavLink>
+        
+        {/* Sadece admin kullanıcılar için */}
+        {userRole === 'admin' && (
+          <>
+            <NavLink 
+              to="/user-assignments" 
+              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+            >
+              Müşteri Atamaları
+            </NavLink>
+            
+            <NavLink 
+              to="/auth-manager" 
+              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+            >
+              Kullanıcı Yönetimi
+            </NavLink>
+          </>
+        )}
+      </div>
     </nav>
   );
 };
