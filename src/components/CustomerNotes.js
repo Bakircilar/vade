@@ -38,7 +38,7 @@ const CustomerNotes = ({ customerId, customerBalance, pastDueBalance: propPastDu
     }
   }, [customerId]);
 
-  // Add a new note
+  // Add a new note - SADECE PROPS'TAN GELEN BAKIYE DEĞERINI KULLAN
   const handleAddNote = async (e) => {
     e.preventDefault();
     if (!newNote.trim()) {
@@ -48,104 +48,20 @@ const CustomerNotes = ({ customerId, customerBalance, pastDueBalance: propPastDu
 
     setAddingNote(true);
     try {
-      // Debug için bakiye bilgisini kontrol et
-      console.log('Props\'tan gelen müşteri bakiye bilgileri:', {
-        customerBalance,
-        propPastDueBalance,
-        propNotDueBalance
-      });
-      
-      // Veritabanından doğrudan bakiye bilgisini al
-      const { data: balanceData, error: balanceError } = await supabase
-        .from('customer_balances')
-        .select('past_due_balance, not_due_balance, total_balance')
-        .eq('customer_id', customerId)
-        .single();
-      
-      if (balanceError && balanceError.code !== 'PGRST116') {
-        console.error("Bakiye bilgisi alınamadı:", balanceError);
-      } else {
-        console.log('Veritabanından alınan bakiye bilgisi:', balanceData);
-      }
-      
-      // Öncelik sırası: 
-      // 1. Veritabanından alınan değerler
-      // 2. Props'tan gelen değerler
-      // 3. null değer
-      
-      // Total balance hesaplama
-      let finalTotalBalance = null;
-      if (balanceData?.total_balance !== null && balanceData?.total_balance !== undefined) {
-        const parsedValue = parseFloat(balanceData.total_balance);
-        if (!isNaN(parsedValue)) {
-          finalTotalBalance = parsedValue;
-        }
-      } else if (customerBalance !== null && customerBalance !== undefined) {
-        const parsedValue = parseFloat(customerBalance);
-        if (!isNaN(parsedValue)) {
-          finalTotalBalance = parsedValue;
-        }
-      }
-      
-      // Past due balance hesaplama
-      let finalPastDueBalance = null;
-      if (balanceData?.past_due_balance !== null && balanceData?.past_due_balance !== undefined) {
-        const parsedValue = parseFloat(balanceData.past_due_balance);
-        if (!isNaN(parsedValue)) {
-          finalPastDueBalance = parsedValue;
-        }
-      } else if (propPastDueBalance !== null && propPastDueBalance !== undefined) {
-        const parsedValue = parseFloat(propPastDueBalance);
-        if (!isNaN(parsedValue)) {
-          finalPastDueBalance = parsedValue;
-        }
-      }
-      
-      // Not due balance hesaplama
-      let finalNotDueBalance = null;
-      if (balanceData?.not_due_balance !== null && balanceData?.not_due_balance !== undefined) {
-        const parsedValue = parseFloat(balanceData.not_due_balance);
-        if (!isNaN(parsedValue)) {
-          finalNotDueBalance = parsedValue;
-        }
-      } else if (propNotDueBalance !== null && propNotDueBalance !== undefined) {
-        const parsedValue = parseFloat(propNotDueBalance);
-        if (!isNaN(parsedValue)) {
-          finalNotDueBalance = parsedValue;
-        }
-      }
-      
-      // Eğer total_balance yoksa ve diğer iki değer varsa toplam hesaplayalım
-      if (finalTotalBalance === null && finalPastDueBalance !== null && finalNotDueBalance !== null) {
-        finalTotalBalance = finalPastDueBalance + finalNotDueBalance;
-      }
-      
-      // Hiçbiri yoksa props'tan gelen customerBalance'ı kullan
-      if (finalTotalBalance === null && customerBalance !== null && customerBalance !== undefined) {
-        const parsedValue = parseFloat(customerBalance);
-        if (!isNaN(parsedValue)) {
-          finalTotalBalance = parsedValue;
-        }
-      }
-      
-      // Son hesaplanan değerleri kontrol edelim
-      console.log('Son hesaplanan bakiye değerleri:', {
-        finalTotalBalance,
-        finalPastDueBalance,
-        finalNotDueBalance
-      });
+      // PROPS'TAN GELEN DEĞERI DIREK KAYDET - propPastDueBalance kullanın (çünkü prop yeniden adlandırıldı)
+      const balance_value = parseFloat(propPastDueBalance) || 0;
 
+      // Not verisini oluştur
       const newNoteData = {
         customer_id: customerId,
         note_content: newNote.trim(),
         promise_date: promiseDate || null,
-        balance_at_time: finalTotalBalance,
-        past_due_balance: finalPastDueBalance,
-        not_due_balance: finalNotDueBalance
+        balance_at_time: balance_value // Vadesi geçmiş bakiyeyi direk kaydet
       };
       
-      console.log('Kaydedilecek not verisi:', newNoteData);
+      console.log('Vadesi geçmiş bakiye değeri (kaydedilecek):', balance_value);
 
+      // Notu veritabanına ekle
       const { error } = await supabase
         .from('customer_notes')
         .insert([newNoteData]);
@@ -199,6 +115,11 @@ const CustomerNotes = ({ customerId, customerBalance, pastDueBalance: propPastDu
       <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>
         Müşteri Notları ve Ödeme Takibi
       </h2>
+      
+      {/* MEVCUT KİTLEME DEĞERİNİ GÖSTER - TEST AMAÇLI */}
+      <div style={{padding: '10px', backgroundColor: '#f7f7f7', marginBottom: '15px', borderRadius: '4px'}}>
+        <p><strong>Vadesi Geçmiş Bakiye:</strong> {formatCurrency(propPastDueBalance)} (bu değer not ile kaydedilecek)</p>
+      </div>
 
       {/* Note entry form */}
       <form onSubmit={handleAddNote} style={{ marginBottom: '20px' }}>
@@ -299,38 +220,7 @@ const CustomerNotes = ({ customerId, customerBalance, pastDueBalance: propPastDu
               )}
               
               {/* Bakiye Bilgileri */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginTop: '10px' }}>
-                {/* Vadesi Geçmiş Bakiye */}
-                {note.past_due_balance !== null && note.past_due_balance !== undefined && (
-                  <div style={{ 
-                    padding: '8px', 
-                    backgroundColor: '#fff8f8', 
-                    borderRadius: '4px',
-                    border: '1px solid #fee2e2'
-                  }}>
-                    <div style={{ fontSize: '12px', color: '#991b1b' }}>Vadesi Geçmiş Bakiye:</div>
-                    <div style={{ fontWeight: 'bold', color: '#e53e3e' }}>
-                      {formatCurrency(note.past_due_balance)}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Vadesi Geçmemiş Bakiye */}
-                {note.not_due_balance !== null && note.not_due_balance !== undefined && (
-                  <div style={{ 
-                    padding: '8px', 
-                    backgroundColor: '#f0f9ff', 
-                    borderRadius: '4px',
-                    border: '1px solid #e1f0ff'
-                  }}>
-                    <div style={{ fontSize: '12px', color: '#1e40af' }}>Vadesi Geçmemiş Bakiye:</div>
-                    <div style={{ fontWeight: 'bold', color: '#3b82f6' }}>
-                      {formatCurrency(note.not_due_balance)}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Toplam Bakiye */}
+              <div style={{ marginTop: '10px' }}>
                 {note.balance_at_time !== null && note.balance_at_time !== undefined && (
                   <div style={{ 
                     padding: '8px', 
@@ -338,7 +228,7 @@ const CustomerNotes = ({ customerId, customerBalance, pastDueBalance: propPastDu
                     borderRadius: '4px',
                     border: '1px solid #e2e8f0'
                   }}>
-                    <div style={{ fontSize: '12px', color: '#475569' }}>Toplam Bakiye:</div>
+                    <div style={{ fontSize: '12px', color: '#475569' }}>Not Eklendiğindeki Bakiye:</div>
                     <div style={{ fontWeight: 'bold' }}>
                       {formatCurrency(note.balance_at_time)}
                     </div>

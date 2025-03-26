@@ -4,16 +4,13 @@ import { supabase } from '../services/supabase';
 import { format, differenceInDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { toast } from 'react-toastify';
+import CustomerNotes from '../components/CustomerNotes'; // CustomerNotes bileşenini import ediyoruz
 
 const CustomerDetail = () => {
   const { id } = useParams();
   const [customer, setCustomer] = useState(null);
   const [balance, setBalance] = useState(null);
-  const [notes, setNotes] = useState([]);
-  const [newNote, setNewNote] = useState('');
-  const [promiseDate, setPromiseDate] = useState('');
   const [loading, setLoading] = useState(true);
-  const [addingNote, setAddingNote] = useState(false);
 
   const fetchCustomerData = useCallback(async () => {
     setLoading(true);
@@ -38,20 +35,8 @@ const CustomerDetail = () => {
         console.error("Bakiye hatası:", balanceError);
       }
 
-      // Get customer notes
-      const { data: notesData, error: notesError } = await supabase
-        .from('customer_notes')
-        .select('*')
-        .eq('customer_id', id)
-        .order('created_at', { ascending: false });
-      
-      if (notesError) {
-        console.error("Notlar alınamadı:", notesError);
-      }
-
       setCustomer(customerData);
       setBalance(balanceData || null);
-      setNotes(notesData || []);
     } catch (error) {
       toast.error('Müşteri bilgileri yüklenirken bir hata oluştu');
       console.error('Error loading customer data:', error);
@@ -65,46 +50,6 @@ const CustomerDetail = () => {
       fetchCustomerData();
     }
   }, [id, fetchCustomerData]);
-
-  // Add a new note
-  const handleAddNote = async (e) => {
-    e.preventDefault();
-    if (!newNote.trim()) {
-      toast.warning('Not içeriği boş olamaz');
-      return;
-    }
-
-    setAddingNote(true);
-    try {
-      // Calculate current balance
-      const currentBalance = balance ? 
-        (parseFloat(balance.total_balance) || 
-          (parseFloat(balance.past_due_balance || 0) + parseFloat(balance.not_due_balance || 0))) : 0;
-
-      const newNoteData = {
-        customer_id: id,
-        note_content: newNote.trim(),
-        promise_date: promiseDate || null,
-        balance_at_time: currentBalance
-      };
-
-      const { error } = await supabase
-        .from('customer_notes')
-        .insert([newNoteData]);
-
-      if (error) throw error;
-
-      toast.success('Not başarıyla eklendi');
-      setNewNote('');
-      setPromiseDate('');
-      fetchCustomerData(); // Refresh data
-    } catch (error) {
-      console.error('Error adding note:', error);
-      toast.error('Not eklenirken bir hata oluştu');
-    } finally {
-      setAddingNote(false);
-    }
-  };
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: '40px' }}>Yükleniyor...</div>;
@@ -123,9 +68,33 @@ const CustomerDetail = () => {
 
   // Check if we have any balance data
   const hasBalance = balance !== null;
-  const pastDueBalance = hasBalance ? parseFloat(balance.past_due_balance || 0) : 0;
-  const notDueBalance = hasBalance ? parseFloat(balance.not_due_balance || 0) : 0;
-  const totalBalance = hasBalance ? (parseFloat(balance.total_balance) || (pastDueBalance + notDueBalance)) : 0;
+  
+  // Bakiye değerlerini hesapla - parse etme kontrollerini güçlendir
+  const pastDueBalance = hasBalance ? (
+    balance.past_due_balance !== null && balance.past_due_balance !== undefined
+      ? parseFloat(balance.past_due_balance)
+      : 0
+  ) : 0;
+  
+  const notDueBalance = hasBalance ? (
+    balance.not_due_balance !== null && balance.not_due_balance !== undefined
+      ? parseFloat(balance.not_due_balance)
+      : 0
+  ) : 0;
+  
+  // Toplam bakiye: 1. total_balance alanı, 2. past_due + not_due toplamı
+  const totalBalance = hasBalance ? (
+    balance.total_balance !== null && balance.total_balance !== undefined 
+      ? parseFloat(balance.total_balance) 
+      : (pastDueBalance + notDueBalance)
+  ) : 0;
+
+  // Debug için bakiye değerlerini console'a yazdır
+  console.log('CustomerDetail.js - Hesaplanan değerler:', {
+    pastDueBalance,
+    notDueBalance,
+    totalBalance
+  });
 
   return (
     <div>
@@ -234,121 +203,16 @@ const CustomerDetail = () => {
         )}
       </div>
       
-      {/* Customer Notes Section */}
-      <div className="card" style={{ marginTop: '20px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>
-          Müşteri Notları ve Ödeme Takibi
-        </h2>
-
-        {/* Note entry form */}
-        <form onSubmit={handleAddNote} style={{ marginBottom: '20px' }}>
-          <div className="form-group">
-            <label htmlFor="noteContent">Yeni Not</label>
-            <textarea
-              id="noteContent"
-              value={newNote}
-              onChange={(e) => setNewNote(e.target.value)}
-              className="form-control"
-              rows="3"
-              style={{ 
-                width: '100%', 
-                padding: '8px', 
-                border: '1px solid #ddd', 
-                borderRadius: '4px',
-                marginBottom: '10px'
-              }}
-              placeholder="Müşteri ile ilgili notunuzu buraya yazın..."
-            ></textarea>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="promiseDate">Söz Verilen Ödeme Tarihi (Opsiyonel)</label>
-            <input
-              type="date"
-              id="promiseDate"
-              value={promiseDate}
-              onChange={(e) => setPromiseDate(e.target.value)}
-              className="form-control"
-              style={{ 
-                width: '100%', 
-                padding: '8px', 
-                border: '1px solid #ddd', 
-                borderRadius: '4px' 
-              }}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={addingNote || !newNote.trim()}
-            className="btn btn-primary"
-            style={{ marginTop: '10px' }}
-          >
-            {addingNote ? 'Ekleniyor...' : 'Not Ekle'}
-          </button>
-        </form>
-
-        {/* Divider */}
-        <hr style={{ margin: '20px 0', borderTop: '1px solid #eee' }} />
-
-        {/* Notes list */}
-        <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '15px' }}>
-          Geçmiş Notlar
-        </h3>
-
-        {notes.length > 0 ? (
-          <div>
-            {notes.map((note) => (
-              <div 
-                key={note.id} 
-                className="card" 
-                style={{ 
-                  marginBottom: '15px', 
-                  padding: '15px',
-                  backgroundColor: '#f9f9f9',
-                  border: '1px solid #eee',
-                  borderRadius: '4px'
-                }}
-              >
-                <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ fontWeight: 'bold', color: '#666' }}>
-                    {note.created_at ? format(new Date(note.created_at), 'dd.MM.yyyy HH:mm', { locale: tr }) : '-'}
-                  </span>
-                  
-                  {note.balance_at_time !== null && (
-                    <span style={{ color: '#333' }}>
-                      Bakiye: <strong>
-                        {new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(note.balance_at_time)}
-                      </strong>
-                    </span>
-                  )}
-                </div>
-
-                <p style={{ margin: '0 0 10px 0', whiteSpace: 'pre-wrap' }}>{note.note_content}</p>
-                
-                {note.promise_date && (
-                  <div 
-                    style={{ 
-                      padding: '5px 10px', 
-                      backgroundColor: '#e3f2fd', 
-                      borderRadius: '4px',
-                      display: 'inline-block',
-                      fontSize: '13px',
-                      color: '#1565c0'
-                    }}
-                  >
-                    <strong>Söz Verilen Ödeme Tarihi:</strong> {format(new Date(note.promise_date), 'dd.MM.yyyy', { locale: tr })}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
-            Bu müşteri için henüz not girilmemiş
-          </p>
-        )}
-      </div>
+      {/* CustomerNotes bileşenini çağırırken - SADECE BU BÖLÜM KALACAK */}
+      <CustomerNotes 
+        customerId={id} 
+        customerBalance={totalBalance}
+        pastDueBalance={pastDueBalance}
+        notDueBalance={notDueBalance}
+      />
+      
+      {/* Customer Notes Section - BU BÖLÜMÜ KALDIRIYORUZ */}
+      {/* Eskiden burada bir not ekleme formu vardı, artık kullanılmıyor */}
     </div>
   );
 };

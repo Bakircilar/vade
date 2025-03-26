@@ -33,84 +33,53 @@ const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
       console.log('Müşteri ID:', customerId);
       console.log('Veritabanından alınan bakiye bilgisi:', balanceData);
       
-      if (balanceError) {
-        console.error("Bakiye bilgisi alınamadı:", balanceError);
-        // Bakiye bilgisi alınamazsa ayrı bir sorgu deneyelim - customer_id ile değil müşteri koduyla deneme
-        const { data: customerData, error: customerError } = await supabase
-          .from('customers')
-          .select('code')
-          .eq('id', customerId)
-          .single();
-          
-        if (!customerError && customerData) {
-          console.log("Müşteri kodu:", customerData.code);
-          
-          // Alternatif olarak müşteri koduyla sorgulayalım
-          const { data: altBalanceData, error: altBalanceError } = await supabase
-            .from('customer_balances')
-            .select('past_due_balance, not_due_balance, total_balance')
-            .eq('customer_code', customerData.code) // Eğer ilişki customer_code üzerinden kurulmuşsa
-            .single();
-            
-          if (!altBalanceError && altBalanceData) {
-            console.log("Alternatif yöntemle alınan bakiye bilgisi:", altBalanceData);
-            // Alternatif yöntemle alınan veriyi kullan
-            balanceData = altBalanceData;
-          }
-        }
-      }
-      
-      // Bakiye değerlerini hazırla - çok katı kontroller yapalım
-      let pastDueBalance = null;
-      let notDueBalance = null;
+      // Bakiye değerlerini daha güvenli şekilde parse et
       let totalBalance = null;
       
       if (balanceData) {
-        // past_due_balance kontrolü
-        if (balanceData.past_due_balance !== null && balanceData.past_due_balance !== undefined) {
-          const parsedValue = parseFloat(balanceData.past_due_balance);
-          if (!isNaN(parsedValue)) {
-            pastDueBalance = parsedValue;
-          }
-        }
-        
-        // not_due_balance kontrolü
-        if (balanceData.not_due_balance !== null && balanceData.not_due_balance !== undefined) {
-          const parsedValue = parseFloat(balanceData.not_due_balance);
-          if (!isNaN(parsedValue)) {
-            notDueBalance = parsedValue;
-          }
-        }
-        
-        // total_balance kontrolü
+        // total_balance kontrolü - güvenli parse etme
         if (balanceData.total_balance !== null && balanceData.total_balance !== undefined) {
           const parsedValue = parseFloat(balanceData.total_balance);
           if (!isNaN(parsedValue)) {
             totalBalance = parsedValue;
           }
         }
+        
+        // Eğer total_balance yoksa ve diğer ikisi varsa hesapla
+        if (totalBalance === null) {
+          let pastDueBalance = 0;
+          let notDueBalance = 0;
+          
+          if (balanceData.past_due_balance !== null && balanceData.past_due_balance !== undefined) {
+            const parsedValue = parseFloat(balanceData.past_due_balance);
+            if (!isNaN(parsedValue)) {
+              pastDueBalance = parsedValue;
+            }
+          }
+          
+          if (balanceData.not_due_balance !== null && balanceData.not_due_balance !== undefined) {
+            const parsedValue = parseFloat(balanceData.not_due_balance);
+            if (!isNaN(parsedValue)) {
+              notDueBalance = parsedValue;
+            }
+          }
+          
+          totalBalance = pastDueBalance + notDueBalance;
+        }
       }
       
-      // Eğer total_balance yoksa ve diğer iki değer varsa toplam hesaplayalım
-      if (totalBalance === null && pastDueBalance !== null && notDueBalance !== null) {
-        totalBalance = pastDueBalance + notDueBalance;
-      }
+      // Eğer hiçbir bakiye değeri hesaplanamadıysa varsayılan değer kullan
+      if (totalBalance === null) totalBalance = 0;
       
-      // Debug için hesaplanan değerleri kontrol edelim
-      console.log("Hesaplanan bakiye değerleri:", {
-        pastDueBalance,
-        notDueBalance,
-        totalBalance
-      });
+      // Debug için hesaplanan değeri kontrol edelim
+      console.log("Hesaplanan toplam bakiye:", totalBalance);
       
-      // Yeni notu oluştur
+      // Yeni notu oluştur - sadece veritabanında var olan alanları kullan
       const newNoteData = {
         customer_id: customerId,
         note_content: note.trim(),
         promise_date: promiseDate || null,
-        balance_at_time: totalBalance,
-        past_due_balance: pastDueBalance,
-        not_due_balance: notDueBalance
+        balance_at_time: totalBalance
       };
       
       console.log("Kaydedilecek not verisi:", newNoteData);
@@ -120,14 +89,22 @@ const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
         .from('customer_notes')
         .insert([newNoteData]);
       
-      if (error) throw error;
+      if (error) {
+        console.error("Not ekleme SQL hatası:", error);
+        throw error;
+      }
       
       toast.success('Not başarıyla eklendi');
       onSubmit && onSubmit();
       onClose();
     } catch (error) {
       console.error('Not ekleme hatası:', error);
-      toast.error('Not eklenirken bir hata oluştu');
+      // Daha detaylı hata mesajı
+      if (error.message) {
+        toast.error(`Not eklenirken bir hata oluştu: ${error.message}`);
+      } else {
+        toast.error('Not eklenirken bir hata oluştu');
+      }
     } finally {
       setSubmitting(false);
     }
