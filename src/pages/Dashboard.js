@@ -46,19 +46,57 @@ const Dashboard = () => {
         
         if (recentError) throw recentError;
         
-        // Adım 3: Tüm bakiyeleri getir
-        const { data: balances, error: balancesError } = await supabase
-          .from('customer_balances')
-          .select(`
-            *,
-            customers (
-              id, name, code
-            )
-          `)
-          .limit(10000);
-        
-        if (balancesError) throw balancesError;
-        
+        // Adım 3: Tüm bakiyeleri getir - Sayfalama ile
+        console.log("Veritabanından tüm bakiyeler sayfalama ile yükleniyor...");
+
+        // Sayfalama ile tüm verileri çek
+        let allBalances = [];
+        let page = 0;
+        const pageSize = 1000; // Her seferde 1000 kayıt
+        let hasMoreData = true;
+
+        while (hasMoreData) {
+          // Sayfa sınırlarını hesapla
+          const from = page * pageSize;
+          
+          console.log(`Bakiye sayfası ${page+1} yükleniyor (kayıtlar ${from}-${from+pageSize-1})...`);
+          
+          const { data: pageData, error: pageError } = await supabase
+            .from('customer_balances')
+            .select(`
+              *,
+              customers (
+                id, name, code
+              )
+            `)
+            .range(from, from + pageSize - 1);
+          
+          if (pageError) {
+            console.error(`Sayfa ${page+1} yüklenirken hata:`, pageError);
+            throw pageError;
+          }
+          
+          // Veri yoksa veya sayfa eksik veri içeriyorsa, tüm verileri çektik demektir
+          if (!pageData || pageData.length === 0) {
+            hasMoreData = false;
+          } else {
+            // Verileri ana diziye ekle
+            allBalances = [...allBalances, ...pageData];
+            console.log(`Toplam ${allBalances.length} bakiye kaydı yüklendi`);
+            
+            // Eksik veri varsa tüm verileri çektik demektir
+            if (pageData.length < pageSize) {
+              hasMoreData = false;
+            } else {
+              // Sonraki sayfaya geç
+              page++;
+            }
+          }
+        }
+
+        // Artık tüm bakiyeler elimizde
+        const balances = allBalances;
+
         console.log(`${balances?.length || 0} adet bakiye kaydı yüklendi.`);
         
         // Bugünün tarihi
@@ -110,29 +148,42 @@ const Dashboard = () => {
               }
               
               // ÖNEMLİ: VADESİ GEÇMİŞ KONTROLÜ
-              // Sadece past_due_balance > 100₺ kontrolü yap
+              // past_due_balance > 100₺ ve past_due_date bugünden önceyse vadesi geçmiş say
               const isPastDue = pastDueBalance > VadeHelper.MIN_BALANCE;
               
               if (isPastDue) {
+                // Debug için tarih kontrol et
+                let overdueDate = null;
+                if (balance.past_due_date) {
+                  try {
+                    overdueDate = new Date(balance.past_due_date);
+                  } catch (e) {
+                    console.error("past_due_date tarih dönüşüm hatası:", e);
+                  }
+                }
+                
                 overdueCount++;
                 
                 // Debug için örnek ekle 
                 overdueItems.push({
                   customer: balance.customers.name,
                   balance: pastDueBalance,
-                  total: totalBalance
+                  total: totalBalance,
+                  date: overdueDate ? overdueDate.toISOString() : null
                 });
               }
               
               // ÖNEMLİ: YAKLAŞAN VADE KONTROLÜ
-              // not_due_date'i kontrol et, bugünden 15 güne kadar olan tarihleri yaklaşan olarak işaretle
-              // not_due_balance > 100₺ olmalı
+              // not_due_balance > 100₺ olmalı ve not_due_date bugünden 15 güne kadar olmalı
               if (balance.not_due_date && notDueBalance > VadeHelper.MIN_BALANCE) {
                 try {
                   const dueDate = new Date(balance.not_due_date);
                   dueDate.setHours(0, 0, 0, 0);
                   
-                  if (dueDate >= today && dueDate <= fifteenDaysLater) {
+                  // Debug için tarih kontrolü
+                  const isInFuturePeriod = dueDate >= today && dueDate <= fifteenDaysLater;
+                  
+                  if (isInFuturePeriod) {
                     upcomingCount++;
                     
                     upcomingItems.push({
@@ -149,8 +200,8 @@ const Dashboard = () => {
                       customers: balance.customers,
                       due_date: dueDate.toISOString().split('T')[0],
                       vade_tarihi: dueDate,
-                      calculated_total_balance: Math.abs(notDueBalance),
-                      total_balance: Math.abs(totalBalance)
+                      calculated_total_balance: notDueBalance, // Vadesi geçmemiş bakiye tutarı
+                      total_balance: totalBalance // Toplam bakiye
                     });
                   }
                 } catch (err) {
