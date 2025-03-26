@@ -7,6 +7,9 @@ import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 import VadeHelper from '../helpers/VadeHelper';
 
+// PaymentList.js dosyasındaki QuickNoteForm bileşeni için düzeltme
+// Bu kısmı dosyaya ekleyin veya değiştirin
+
 // Hızlı Not Komponenti
 const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
   const [note, setNote] = useState('');
@@ -22,89 +25,47 @@ const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
     
     setSubmitting(true);
     try {
-      // Get customer balance information
+      // Önce müşterinin bakiye bilgilerini alalım
       const { data: balanceData, error: balanceError } = await supabase
         .from('customer_balances')
-        .select('past_due_balance, not_due_balance, total_balance')
+        .select('past_due_balance')
         .eq('customer_id', customerId)
         .single();
       
-      // Debug için bakiye verisini loglayalım
-      console.log('Müşteri ID:', customerId);
-      console.log('Veritabanından alınan bakiye bilgisi:', balanceData);
+      console.log('Veritabanından alınan müşteri bakiyesi:', balanceData);
       
-      // Bakiye değerlerini daha güvenli şekilde parse et
-      let totalBalance = null;
-      
-      if (balanceData) {
-        // total_balance kontrolü - güvenli parse etme
-        if (balanceData.total_balance !== null && balanceData.total_balance !== undefined) {
-          const parsedValue = parseFloat(balanceData.total_balance);
-          if (!isNaN(parsedValue)) {
-            totalBalance = parsedValue;
-          }
-        }
-        
-        // Eğer total_balance yoksa ve diğer ikisi varsa hesapla
-        if (totalBalance === null) {
-          let pastDueBalance = 0;
-          let notDueBalance = 0;
-          
-          if (balanceData.past_due_balance !== null && balanceData.past_due_balance !== undefined) {
-            const parsedValue = parseFloat(balanceData.past_due_balance);
-            if (!isNaN(parsedValue)) {
-              pastDueBalance = parsedValue;
-            }
-          }
-          
-          if (balanceData.not_due_balance !== null && balanceData.not_due_balance !== undefined) {
-            const parsedValue = parseFloat(balanceData.not_due_balance);
-            if (!isNaN(parsedValue)) {
-              notDueBalance = parsedValue;
-            }
-          }
-          
-          totalBalance = pastDueBalance + notDueBalance;
+      // Vadesi geçmiş bakiyeyi almaya çalışalım
+      let pastDueBalance = 0;
+      if (balanceData && balanceData.past_due_balance !== null && balanceData.past_due_balance !== undefined) {
+        const parsedValue = parseFloat(balanceData.past_due_balance);
+        if (!isNaN(parsedValue)) {
+          pastDueBalance = parsedValue;
         }
       }
       
-      // Eğer hiçbir bakiye değeri hesaplanamadıysa varsayılan değer kullan
-      if (totalBalance === null) totalBalance = 0;
+      console.log('Hesaplanan vadesi geçmiş bakiye:', pastDueBalance);
       
-      // Debug için hesaplanan değeri kontrol edelim
-      console.log("Hesaplanan toplam bakiye:", totalBalance);
-      
-      // Yeni notu oluştur - sadece veritabanında var olan alanları kullan
+      // Notu oluştur - vadesi geçmiş bakiyeyi doğrudan kullan
       const newNoteData = {
         customer_id: customerId,
         note_content: note.trim(),
         promise_date: promiseDate || null,
-        balance_at_time: totalBalance
+        balance_at_time: pastDueBalance // Vadesi geçmiş bakiyeyi kullan
       };
-      
-      console.log("Kaydedilecek not verisi:", newNoteData);
       
       // Notu veritabanına ekle
       const { error } = await supabase
         .from('customer_notes')
         .insert([newNoteData]);
       
-      if (error) {
-        console.error("Not ekleme SQL hatası:", error);
-        throw error;
-      }
+      if (error) throw error;
       
       toast.success('Not başarıyla eklendi');
       onSubmit && onSubmit();
       onClose();
     } catch (error) {
       console.error('Not ekleme hatası:', error);
-      // Daha detaylı hata mesajı
-      if (error.message) {
-        toast.error(`Not eklenirken bir hata oluştu: ${error.message}`);
-      } else {
-        toast.error('Not eklenirken bir hata oluştu');
-      }
+      toast.error('Not eklenirken bir hata oluştu');
     } finally {
       setSubmitting(false);
     }
