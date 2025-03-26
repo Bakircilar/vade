@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { format, addDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 import VadeHelper from '../helpers/VadeHelper';
-
-// PaymentList.js dosyasındaki QuickNoteForm bileşeni için düzeltme
-// Bu kısmı dosyaya ekleyin veya değiştirin
+import { useUserAccess } from '../helpers/userAccess';
 
 // Hızlı Not Komponenti
 const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
@@ -32,8 +30,6 @@ const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
         .eq('customer_id', customerId)
         .single();
       
-      console.log('Veritabanından alınan müşteri bakiyesi:', balanceData);
-      
       // Vadesi geçmiş bakiyeyi almaya çalışalım
       let pastDueBalance = 0;
       if (balanceData && balanceData.past_due_balance !== null && balanceData.past_due_balance !== undefined) {
@@ -42,8 +38,6 @@ const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
           pastDueBalance = parsedValue;
         }
       }
-      
-      console.log('Hesaplanan vadesi geçmiş bakiye:', pastDueBalance);
       
       // Notu oluştur - vadesi geçmiş bakiyeyi doğrudan kullan
       const newNoteData = {
@@ -161,6 +155,7 @@ const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
 };
 
 const PaymentList = () => {
+  const location = useLocation();
   // URL parametre değerlerini al
   const [searchParams] = useSearchParams();
   const filterType = searchParams.get('filter') || 'all';
@@ -171,6 +166,11 @@ const PaymentList = () => {
   const [error, setError] = useState(null);
   const [dateRange, setDateRange] = useState(30); // Yaklaşan vadeler için 30 gün
   const [exporting, setExporting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState(''); // Arama terimi için state
+  const [initialLoadDone, setInitialLoadDone] = useState(false); // Başlangıç yüklemesi tamamlandı mı
+  
+  // User access control
+  const { isAdmin, isMuhasebe, getAssignedCustomerIds } = useUserAccess();
   
   // Sıralama için state
   const [sortConfig, setSortConfig] = useState({
@@ -215,6 +215,11 @@ const PaymentList = () => {
     setDateRange(days);
   };
 
+  // Arama fonksiyonu
+  const handleSearch = (e) => {
+    setSearchTerm(e.target.value);
+  };
+
   // Hızlı not modunu aç
   const openQuickNote = (customerId, customerName) => {
     setQuickNoteData({
@@ -233,12 +238,14 @@ const PaymentList = () => {
     });
   };
 
-  // Veri getirme fonksiyonu
-  const fetchData = async () => {
+  // Veri getirme fonksiyonu - hata düzeltildi
+  const fetchData = async (force = false) => {
+    // Eğer başlangıç yüklemesi yapıldıysa ve zorlanmıyorsa, tekrar yükleme
+    if (initialLoadDone && !force) return;
+
     setLoading(true);
     try {
-      // Test amaçlı olarak filtreleme öncesi tüm verileri alıyoruz
-      console.log("Veri yükleniyor... Lütfen bekleyin.");
+      console.log("Veri yükleniyor... Filtre tipi:", filterType);
       
       // Tüm verileri çekmek için sayfalama kullanın
       let allData = [];
@@ -246,15 +253,15 @@ const PaymentList = () => {
       const pageSize = 1000; // Her sayfada 1000 kayıt
       let hasMoreData = true;
 
-      console.log("Veritabanından tüm kayıtlar sayfalama ile yükleniyor...");
+      // Kullanıcıya atanmış müşteri ID'lerini al
+      const assignedIds = await getAssignedCustomerIds();
 
       while (hasMoreData) {
         // Sayfa başlangıç ve bitiş indeksleri
         const from = page * pageSize;
         
-        console.log(`Sayfa ${page+1} yükleniyor (${from}-${from+pageSize-1} arası kayıtlar)...`);
-        
-        const { data: pageData, error: pageError } = await supabase
+        // Sorguyu oluştur
+        let query = supabase
           .from('customer_balances')
           .select(`
             *,
@@ -263,6 +270,16 @@ const PaymentList = () => {
             )
           `)
           .range(from, from + pageSize - 1);
+        
+        // Erişim filtresi ekle - admin ve muhasebe dışındaki kullanıcılar için
+        if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+          query = query.in('customer_id', assignedIds);
+        } else if (!isAdmin && !isMuhasebe) {
+          // Hiç atanmış müşteri yoksa ve admin veya muhasebe değilse
+          query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
+        }
+        
+        const { data: pageData, error: pageError } = await query;
         
         if (pageError) {
           console.error(`Sayfa ${page+1} yüklenirken hata:`, pageError);
@@ -275,7 +292,6 @@ const PaymentList = () => {
         } else {
           // Verileri ana diziye ekle
           allData = [...allData, ...pageData];
-          console.log(`Toplam ${allData.length} kayıt yüklendi`);
           
           // Eğer dönen veri sayısı pageSize'dan azsa, tüm verileri çektik demektir
           if (pageData.length < pageSize) {
@@ -287,13 +303,9 @@ const PaymentList = () => {
         }
       }
 
-      console.log(`Veritabanından toplam ${allData.length} adet bakiye kaydı getirildi`);
-
-      // Şimdi allData değişkenini kullanabiliriz (önceki kodda "data" değişkeni kullanıldığı yerde)
+      // Tüm kayıtları sakla (Excel dışa aktarımı için)
       const data = allData;
-      
-      // Hata ayıklama bilgisi
-      console.log(`Veritabanından ${data.length} adet bakiye kaydı getirildi`);
+      setAllRecords(data);
       
       if (!data || data.length === 0) {
         setBalances([]);
@@ -306,11 +318,11 @@ const PaymentList = () => {
           totalBalance: 0
         });
         setLoading(false);
+        setInitialLoadDone(true);
         return;
       }
       
-      // Tüm kayıtları sakla (Excel dışa aktarımı için)
-      setAllRecords(data);
+      console.log(`Toplam ${data.length} bakiye kaydı yüklendi. Filtreleniyor...`);
       
       // Bugünün tarihi
       const today = new Date();
@@ -324,13 +336,10 @@ const PaymentList = () => {
       let totalNotDueBalance = 0;
       let totalBalance = 0;
       
-      // Gösterilecek bakiyeleri filtrele
-      let filteredBalances = [];
-      
-      // Her bakiye için işlem yap
-      data.forEach(balance => {
+      // Her bakiyeyi işle
+      let processedBalances = data.map(balance => {
         // Müşteri bilgisi yoksa atla
-        if (!balance.customers) return;
+        if (!balance.customers) return null;
         
         try {
           // Bakiye değerlerini sayısal olarak kontrol et
@@ -346,7 +355,7 @@ const PaymentList = () => {
           // Toplam bakiye sıfır veya çok küçük miktarsa kayıtı tamamen atla 
           // (yuvarlama hatalarını önlemek için 0.01'den küçük kontrol ediyoruz)
           if (Math.abs(totalBalanceValue) < 0.01) {
-            return;
+            return null;
           }
           
           // Vade tarihlerini kontrol et
@@ -400,74 +409,68 @@ const PaymentList = () => {
             }
           }
           
-          // 4. Filtreleme tipine göre gösterilecekleri belirle
-          let shouldInclude = false;
+          // Toplam değerleri güncelle
+          totalPastDueBalance += pastDueBalance;
+          totalNotDueBalance += notDueBalance;
+          totalBalance += totalBalanceValue;
           
-          if (filterType === 'all') {
-            shouldInclude = true;
-          } else if (filterType === 'upcoming') {
-            // Yaklaşan vadesi olan ve bakiyesi 100 TL ve üzeri olan kayıtlar
-            if (isUpcoming) {
-              // Yaklaşan vadeler için: 
-              // - Vadesi geçmemiş bakiyesi 100 TL ve üzeri olmalı
-              shouldInclude = (notDueBalance > VadeHelper.MIN_BALANCE);
-            }
-          } else if (filterType === 'overdue') {
-            // Vadesi geçmiş ve vadesi geçmiş bakiyesi 100 TL ve üzeri olan kayıtlar
-            shouldInclude = isPastDue && pastDueBalance > VadeHelper.MIN_BALANCE;
-            
-            // Vade tarihi belirsiz ama vadesi geçmiş bakiyesi 100 TL ve üzeri olan kayıtlar 
-            if (!isPastDue && !effectiveDueDate && pastDueBalance > VadeHelper.MIN_BALANCE) {
-              shouldInclude = true;
-              isPastDue = true; // Vade tarihi olmayan ama vadesi geçen bakiyesi olanlar 
-            }
-          }
-          
-          if (shouldInclude) {
-            filteredBalances.push({
-              ...balance,
-              effective_due_date: effectiveDueDate ? effectiveDueDate.toISOString() : null,
-              is_past_due: isPastDue,
-              is_upcoming: isUpcoming,
-              calculated_past_due: pastDueBalance,
-              calculated_not_due: notDueBalance,
-              calculated_total: totalBalanceValue
-            });
-
-            // Toplam değerleri güncelle (filtrelenmiş veriler için)
-            totalPastDueBalance += pastDueBalance;
-            totalNotDueBalance += notDueBalance;
-            totalBalance += totalBalanceValue;
-          }
+          // İşlenmiş bakiye verisini döndür
+          return {
+            ...balance,
+            effective_due_date: effectiveDueDate ? effectiveDueDate.toISOString() : null,
+            is_past_due: isPastDue,
+            is_upcoming: isUpcoming,
+            calculated_past_due: pastDueBalance,
+            calculated_not_due: notDueBalance,
+            calculated_total: totalBalanceValue
+          };
         } catch (err) {
           console.error("Bakiye işleme hatası:", err, balance);
+          return null;
         }
-      });
-      
-      // Sırala
-      filteredBalances = sortData(filteredBalances);
+      }).filter(item => item !== null); // null değerleri filtrele
       
       // İstatistikleri güncelle
       setStats({
         total: nonZeroBalanceCount,
-        displayed: filteredBalances.length,
+        displayed: processedBalances.length,
         allRecordsCount: data.length,
         totalPastDueBalance: totalPastDueBalance,
         totalNotDueBalance: totalNotDueBalance,
         totalBalance: totalBalance
       });
       
+      // Filtreleme tipine göre kayıtları filtrele
+      let filteredBalances = processedBalances;
+      
+      if (filterType === 'upcoming') {
+        // Sadece yaklaşan vadeli ve 100 TL üzeri bakiyeleri al
+        filteredBalances = processedBalances.filter(balance => 
+          balance.is_upcoming && balance.calculated_not_due > VadeHelper.MIN_BALANCE
+        );
+      } 
+      else if (filterType === 'overdue') {
+        // Sadece vadesi geçmiş ve 100 TL üzeri bakiyeleri al
+        filteredBalances = processedBalances.filter(balance => 
+          (balance.is_past_due || (!balance.effective_due_date && balance.calculated_past_due > VadeHelper.MIN_BALANCE)) 
+          && balance.calculated_past_due > VadeHelper.MIN_BALANCE
+        );
+      }
+      
+      // Sıralama uygula
+      filteredBalances = sortData(filteredBalances);
+      console.log(`Filtreleme sonrası ${filteredBalances.length} kayıt görüntülenecek.`);
+      
       // Bakiyeleri ayarla
       setBalances(filteredBalances);
       
-      console.log(`${filteredBalances.length} adet bakiye filtrelendi`);
-      console.log(`Sıfır olmayan bakiye: ${nonZeroBalanceCount}`);
     } catch (err) {
       console.error("Veri çekerken hata:", err);
       setError(err.message);
       toast.error("Veriler yüklenirken hata oluştu");
     } finally {
       setLoading(false);
+      setInitialLoadDone(true);
     }
   };
 
@@ -550,14 +553,34 @@ const PaymentList = () => {
     });
   };
 
-  // İlk yükleme ve filtre değişikliğinde verileri getir
+  // Arama ile filtreleme
+  const filteredBalances = React.useMemo(() => {
+    if (!searchTerm.trim()) return balances;
+    
+    const searchLower = searchTerm.toLowerCase().trim();
+    return balances.filter(balance => {
+      // Müşteri bilgisi yoksa filtreleme
+      if (!balance.customers) return false;
+      
+      // Müşteri adı, kodu veya sektörüne göre ara
+      return (
+        (balance.customers.name && balance.customers.name.toLowerCase().includes(searchLower)) ||
+        (balance.customers.code && balance.customers.code.toLowerCase().includes(searchLower)) ||
+        (balance.customers.sector_code && balance.customers.sector_code.toLowerCase().includes(searchLower))
+      );
+    });
+  }, [balances, searchTerm]);
+
+  // İlk yükleme için ve filtre değişikliklerinde verileri getir
   useEffect(() => {
-    fetchData();
-  }, [filterType, dateRange]);
+    fetchData(true); // Yeni filtreyi uygulamak için force true
+  }, [filterType, dateRange, location.search]);
 
   // Sıralama değiştiğinde verileri yeniden sırala
   useEffect(() => {
-    setBalances(sortData([...balances]));
+    if (balances.length > 0) {
+      setBalances(sortData([...balances]));
+    }
   }, [sortConfig]);
 
   // Gösterilecek status badge'i belirle
@@ -610,7 +633,7 @@ const PaymentList = () => {
       
       // Hangi verileri dışa aktaracağımızı belirle
       if (exportType === 'filtered') {
-        dataToExport = balances;
+        dataToExport = filteredBalances;
         filename = `vade-takip-${filterType}-${new Date().toISOString().slice(0,10)}.xlsx`;
       } else if (exportType === 'all') {
         dataToExport = allRecords;
@@ -698,7 +721,10 @@ const PaymentList = () => {
         <h3>Bir hata oluştu!</h3>
         <p>{error}</p>
         <button 
-          onClick={() => window.location.reload()} 
+          onClick={() => {
+            setInitialLoadDone(false);
+            fetchData(true);
+          }} 
           className="btn btn-warning"
           style={{ marginTop: '10px' }}
         >
@@ -749,7 +775,10 @@ const PaymentList = () => {
           </div>
           
           <button 
-            onClick={fetchData} 
+            onClick={() => {
+              setInitialLoadDone(false);
+              fetchData(true);
+            }} 
             className="btn"
             style={{ padding: '6px 12px' }}
             disabled={loading}
@@ -757,6 +786,17 @@ const PaymentList = () => {
             {loading ? 'Yükleniyor...' : 'Yenile'}
           </button>
         </div>
+      </div>
+      
+      {/* Search Input */}
+      <div style={{ marginBottom: '20px' }}>
+        <input
+          type="text"
+          placeholder="Müşteri adı, kodu veya sektör ile ara..."
+          value={searchTerm}
+          onChange={handleSearch}
+          style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+        />
       </div>
       
       {/* Date range for upcoming payments */}
@@ -810,9 +850,8 @@ const PaymentList = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
           <div>
             <p>
-              <strong>Veritabanındaki Toplam Kayıt:</strong> {stats.allRecordsCount} | 
-              <strong> Sıfır Olmayan Bakiye:</strong> {stats.total} | 
-              <strong> Gösterilen:</strong> {stats.displayed} | 
+              <strong>Yüklenen Kayıt:</strong> {stats.allRecordsCount} | 
+              <strong> Gösterilen:</strong> {filteredBalances.length} | 
               <strong> Filtre:</strong> {
                 filterType === 'upcoming' ? 'Yaklaşanlar' : 
                 filterType === 'overdue' ? 'Vadesi Geçmiş' : 'Tümü'
@@ -825,7 +864,7 @@ const PaymentList = () => {
             <button 
               onClick={() => exportToExcel('filtered')} 
               className="btn btn-success"
-              disabled={exporting || balances.length === 0}
+              disabled={exporting || filteredBalances.length === 0}
               style={{ padding: '6px 12px' }}
             >
               {exporting ? 'İndiriliyor...' : 'Filtrelenmiş Verileri İndir'}
@@ -871,10 +910,10 @@ const PaymentList = () => {
         <div style={{ textAlign: 'center', padding: '40px' }}>Yükleniyor...</div>
       ) : (
         <div className="card">
-          {balances.length > 0 ? (
+          {filteredBalances.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
               <table>
-                <thead>
+                <thead style={{ position: 'sticky', top: 0, backgroundColor: '#fff', zIndex: 1 }}>
                   <tr>
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('customer_name')}>
                       Müşteri {getSortDirectionIcon('customer_name')}
@@ -896,7 +935,7 @@ const PaymentList = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {balances.map((balance) => {
+                  {filteredBalances.map((balance) => {
                     const status = getStatusBadge(balance);
 
                     return (
@@ -953,7 +992,9 @@ const PaymentList = () => {
           ) : (
             <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
               <p style={{ marginBottom: '20px' }}>
-                {filterType === 'upcoming' ? (
+                {searchTerm.trim() ? (
+                  'Arama kriterlerine uygun kayıt bulunamadı.'
+                ) : filterType === 'upcoming' ? (
                   `Belirtilen ${dateRange} günlük vade aralığında kayıt bulunamadı.`
                 ) : filterType === 'overdue' ? (
                   'Vadesi geçmiş kayıt bulunamadı.'
@@ -961,9 +1002,11 @@ const PaymentList = () => {
                   'Kayıt bulunamadı.'
                 )}
               </p>
-              <Link to="/import" className="btn btn-primary">
-                Excel Veri İçe Aktarma
-              </Link>
+              {(isAdmin || isMuhasebe) && (
+                <Link to="/import" className="btn btn-primary">
+                  Excel Veri İçe Aktarma
+                </Link>
+              )}
             </div>
           )}
         </div>
@@ -984,7 +1027,10 @@ const PaymentList = () => {
             customerId={quickNoteData.customerId}
             customerName={quickNoteData.customerName}
             onClose={closeQuickNote}
-            onSubmit={fetchData}
+            onSubmit={() => {
+              setInitialLoadDone(false);
+              fetchData(true);
+            }}
           />
         </div>
       )}

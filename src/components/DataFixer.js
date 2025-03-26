@@ -68,8 +68,6 @@ const DataFixer = () => {
         return;
       }
       
-      console.log(`${balances.length} bakiye verisi yüklendi. Analiz ediliyor...`);
-      
       const fixedBalances = [];
       const detailedChanges = [];
       
@@ -171,10 +169,6 @@ const DataFixer = () => {
       
       setResults(summary);
       setDetailedResults(detailedChanges);
-      
-      // Sonuçları consoleda göster
-      console.log('Veri düzeltme sonuçları:', summary);
-      console.log('Düzeltilen bakiyeler:', detailedChanges);
       
       toast.success(`${balances.length} bakiye kontrol edildi, ${fixedBalances.length} bakiye düzeltildi.`);
     } catch (err) {

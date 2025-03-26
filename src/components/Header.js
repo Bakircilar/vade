@@ -1,10 +1,55 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 
-const Header = ({ session }) => {
+const Header = ({ session, userRole }) => {
+  const [userName, setUserName] = useState('');
+  
+  useEffect(() => {
+    // If session exists, try to get the user's name
+    if (session) {
+      // First check user_metadata
+      const metadataName = session.user?.user_metadata?.full_name;
+      
+      if (metadataName) {
+        setUserName(metadataName);
+      } else {
+        // Try to get from profiles table
+        fetchUserProfile(session.user.id);
+      }
+    }
+  }, [session]);
+  
+  const fetchUserProfile = async (userId) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', userId)
+        .single();
+        
+      if (!error && data && data.full_name) {
+        setUserName(data.full_name);
+      }
+    } catch (error) {
+      console.error('Profil bilgisi getirme hatası:', error);
+    }
+  };
+  
   const handleLogout = async () => {
     await supabase.auth.signOut();
+  };
+  
+  // Function to get role display text
+  const getRoleDisplay = (role) => {
+    switch(role) {
+      case 'admin':
+        return 'Yönetici';
+      case 'muhasebe':
+        return 'Muhasebe';
+      default:
+        return 'Kullanıcı';
+    }
   };
 
   return (
@@ -28,7 +73,19 @@ const Header = ({ session }) => {
       <div>
         {session ? (
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            <span style={{ marginRight: '15px' }}>{session.user.email}</span>
+            <div style={{ marginRight: '15px', textAlign: 'right' }}>
+              <div style={{ fontWeight: 'bold' }}>{userName || session.user.email}</div>
+              <div style={{ 
+                fontSize: '12px', 
+                color: '#888',
+                backgroundColor: userRole === 'admin' ? '#e3f2fd' : userRole === 'muhasebe' ? '#e8f5e9' : '#f5f5f5',
+                padding: '2px 6px',
+                borderRadius: '10px',
+                display: 'inline-block'
+              }}>
+                {getRoleDisplay(userRole)}
+              </div>
+            </div>
             <button 
               onClick={handleLogout}
               style={{

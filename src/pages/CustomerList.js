@@ -2,12 +2,16 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { toast } from 'react-toastify';
+import { useUserAccess } from '../helpers/userAccess';
 
 const CustomerList = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // User access control
+  const { isAdmin, isMuhasebe, filterCustomersByAccess } = useUserAccess();
   
   // Sayfalama için state
   const [pagination, setPagination] = useState({
@@ -20,9 +24,14 @@ const CustomerList = () => {
   // Toplam müşteri sayısını al
   const fetchCustomerCount = async () => {
     try {
-      const { count, error } = await supabase
+      let query = supabase
         .from('customers')
         .select('*', { count: 'exact', head: true });
+      
+      // Yetki filtrelemesi
+      query = await filterCustomersByAccess(query);
+      
+      const { count, error } = await query;
       
       if (error) throw error;
       
@@ -54,15 +63,19 @@ const CustomerList = () => {
       const to = from + pageSize - 1;
       
       // Sayfalanmış veriyi al
-      const { data, error } = await supabase
+      let query = supabase
         .from('customers')
         .select('*')
         .range(from, to)
         .order('name');
       
+      // Kullanıcı erişim kontrolü
+      query = await filterCustomersByAccess(query);
+      
+      const { data, error } = await query;
+      
       if (error) throw error;
       
-      console.log(`Sayfa ${page+1}/${totalPages}: ${data.length} müşteri gösteriliyor (toplam ${totalCount})`);
       setCustomers(data || []);
     } catch (err) {
       console.error("Müşteri getirme hatası:", err);
@@ -92,12 +105,13 @@ const CustomerList = () => {
   
   // Aranan değere göre müşterileri filtrele
   const filteredCustomers = React.useMemo(() => {
-    if (!searchTerm) return customers;
+    if (!searchTerm.trim()) return customers;
     
-    const searchLower = searchTerm.toLowerCase();
+    const searchLower = searchTerm.toLowerCase().trim();
     return customers.filter(customer => 
       (customer.name && customer.name.toLowerCase().includes(searchLower)) ||
-      (customer.code && customer.code.toLowerCase().includes(searchLower))
+      (customer.code && customer.code.toLowerCase().includes(searchLower)) ||
+      (customer.sector_code && customer.sector_code.toLowerCase().includes(searchLower))
     );
   }, [customers, searchTerm]);
 
@@ -146,7 +160,7 @@ const CustomerList = () => {
         <div style={{ width: '60%' }}>
           <input
             type="text"
-            placeholder="Müşteri adı veya kodu ile ara..."
+            placeholder="Müşteri adı, kodu veya sektör ile ara..."
             value={searchTerm}
             onChange={handleSearch}
             style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
@@ -165,34 +179,36 @@ const CustomerList = () => {
       </div>
       
       <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Müşteri Kodu</th>
-              <th>Müşteri Adı</th>
-              <th>Sektör</th>
-              <th>İşlemler</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredCustomers.map((customer) => (
-              <tr key={customer.id}>
-                <td>{customer.code || '-'}</td>
-                <td>{customer.name || '-'}</td>
-                <td>{customer.sector_code || '-'}</td>
-                <td>
-                  <Link
-                    to={`/customers/${customer.id}`}
-                    className="btn btn-primary"
-                    style={{ padding: '4px 8px', fontSize: '12px' }}
-                  >
-                    Detay
-                  </Link>
-                </td>
+        <div style={{ overflowX: 'auto' }}>
+          <table>
+            <thead style={{ position: 'sticky', top: 0, backgroundColor: '#fff', zIndex: 1 }}>
+              <tr>
+                <th>Müşteri Kodu</th>
+                <th>Müşteri Adı</th>
+                <th>Sektör</th>
+                <th>İşlemler</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filteredCustomers.map((customer) => (
+                <tr key={customer.id}>
+                  <td>{customer.code || '-'}</td>
+                  <td>{customer.name || '-'}</td>
+                  <td>{customer.sector_code || '-'}</td>
+                  <td>
+                    <Link
+                      to={`/customers/${customer.id}`}
+                      className="btn btn-primary"
+                      style={{ padding: '4px 8px', fontSize: '12px' }}
+                    >
+                      Detay
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         
         {/* Sayfalama kontrolleri */}
         {pagination.totalPages > 1 && (
@@ -248,7 +264,7 @@ const CustomerList = () => {
             <p>Yükleniyor...</p>
           ) : (
             <p>
-              {searchTerm ? 
+              {searchTerm.trim() ? 
                 `${filteredCustomers.length} müşteri bulundu` : 
                 `${customers.length} müşteri gösteriliyor (toplam ${pagination.total})`}
             </p>

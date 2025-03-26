@@ -5,8 +5,9 @@ import { supabase } from '../services/supabase';
 export const useUserAccess = () => {
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isMuhasebe, setIsMuhasebe] = useState(false); // Muhasebe rolü için eklendi
+  const [isMuhasebe, setIsMuhasebe] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [assignedCustomerIds, setAssignedCustomerIds] = useState([]);
 
   useEffect(() => {
     // Mevcut kullanıcı oturumunu kontrol et ve rolünü al
@@ -21,6 +22,7 @@ export const useUserAccess = () => {
           setUser(null);
           setIsAdmin(false);
           setIsMuhasebe(false);
+          setAssignedCustomerIds([]);
           return;
         }
         
@@ -38,8 +40,19 @@ export const useUserAccess = () => {
         }
         
         // Rolleri kontrol et
-        setIsAdmin(data?.role === 'admin');
-        setIsMuhasebe(data?.role === 'muhasebe'); // Muhasebe rolünü kontrol et
+        const adminRole = data?.role === 'admin';
+        const muhasebeRole = data?.role === 'muhasebe';
+        
+        setIsAdmin(adminRole);
+        setIsMuhasebe(muhasebeRole);
+        
+        // Sadece normal kullanıcılar için atanmış müşteri ID'lerini getir
+        // Admin ve muhasebe kullanıcıları tüm müşterilere otomatik erişebilir
+        if (!adminRole && !muhasebeRole) {
+          const ids = await fetchAssignedCustomerIds(user.id);
+          setAssignedCustomerIds(ids);
+        }
+        
       } catch (error) {
         console.error('Kullanıcı kontrolü hatası:', error);
       } finally {
@@ -50,31 +63,40 @@ export const useUserAccess = () => {
     checkUser();
   }, []);
 
+  // Kullanıcıya atanmış müşteri ID'lerini getir (sadece normal kullanıcılar için)
+  const fetchAssignedCustomerIds = async (userId) => {
+    try {
+      // Kullanıcıya atanmış müşteri ID'lerini getir
+      const { data, error } = await supabase
+        .from('user_customer_assignments')
+        .select('customer_id')
+        .eq('user_id', userId);
+        
+      if (error) {
+        console.error('Atanmış müşteri listesi hatası:', error);
+        return [];
+      }
+      
+      return data.map(assignment => assignment.customer_id);
+    } catch (error) {
+      console.error('Atanmış müşteri listesi hatası:', error);
+      return [];
+    }
+  };
+
   // Belirli bir müşteriye erişim izni var mı kontrol et
   const checkCustomerAccess = async (customerId) => {
     if (!user) return false;
     
-    // Yönetici ve muhasebe her müşteriye erişebilir
+    // Yönetici ve muhasebe her müşteriye erişebilir - Otomatik olarak TRUE dön
     if (isAdmin || isMuhasebe) return true;
     
+    // Atanmış müşteriler listesi doluysa
+    if (assignedCustomerIds.length > 0) {
+      return assignedCustomerIds.includes(customerId);
+    }
+    
     try {
-      // Önce müşteri sektörünü kontrol et
-      const { data: customerData, error: customerError } = await supabase
-        .from('customers')
-        .select('sector_code')
-        .eq('id', customerId)
-        .single();
-        
-      if (customerError) {
-        console.error('Müşteri sektör kontrolü hatası:', customerError);
-        return false;
-      }
-      
-      // Eğer satıcı sektöründe ise, normal kullanıcı erişemez
-      if (customerData?.sector_code === 'satıcı') {
-        return false;
-      }
-      
       // Bu müşteri kullanıcıya atanmış mı kontrol et
       const { data, error } = await supabase
         .from('user_customer_assignments')
@@ -95,55 +117,17 @@ export const useUserAccess = () => {
     }
   };
 
-  // Kullanıcıya atanmış müşteri ID'lerini getir
-  const getAssignedCustomerIds = async () => {
-    if (!user) return [];
-    
-    // Yönetici ve muhasebe için tüm müşteri ID'lerini getir
-    if (isAdmin || isMuhasebe) {
-      const { data, error } = await supabase
-        .from('customers')
-        .select('id');
-        
-      if (error) {
-        console.error('Müşteri ID listesi hatası:', error);
-        return [];
-      }
-      
-      return data.map(customer => customer.id);
-    }
-    
-    try {
-      // Kullanıcıya atanmış müşteri ID'lerini getir
-      const { data, error } = await supabase
-        .from('user_customer_assignments')
-        .select('customer_id')
-        .eq('user_id', user.id);
-        
-      if (error) {
-        console.error('Atanmış müşteri listesi hatası:', error);
-        return [];
-      }
-      
-      return data.map(assignment => assignment.customer_id);
-    } catch (error) {
-      console.error('Atanmış müşteri listesi hatası:', error);
-      return [];
-    }
-  };
-
   // Kullanıcının erişebileceği müşteri verilerini filtrele
   const filterCustomersByAccess = useCallback(async (queryBuilder) => {
     if (!user) return queryBuilder;
     
-    // Yönetici ve muhasebe tüm müşterilere erişebilir
+    // Yönetici ve muhasebe tüm müşterilere erişebilir - Filtreleme uygulanmaz
     if (isAdmin || isMuhasebe) return queryBuilder;
     
-    // Normal kullanıcılar "satıcı" sektöründeki müşterileri göremez
-    queryBuilder = queryBuilder.not('sector_code', 'eq', 'satıcı');
-    
-    // Kullanıcıya atanmış müşteri ID'lerini al
-    const assignedIds = await getAssignedCustomerIds();
+    // Kullanıcıya atanmış müşteri ID'leri
+    const assignedIds = assignedCustomerIds.length > 0 
+      ? assignedCustomerIds 
+      : await fetchAssignedCustomerIds(user.id);
     
     if (assignedIds.length === 0) {
       // Hiç atanmış müşteri yoksa boş sonuç döndür
@@ -153,15 +137,34 @@ export const useUserAccess = () => {
     
     // Sadece atanmış müşterileri getir
     return queryBuilder.in('id', assignedIds);
-  }, [user, isAdmin, isMuhasebe]);
+  }, [user, isAdmin, isMuhasebe, assignedCustomerIds]);
+
+  // Kullanıcının sadece atanan müşteri ID'lerini al (admin için boş dizi döner - tümü erişilebilir)
+  const getAssignedCustomerIds = useCallback(async () => {
+    if (!user) return [];
+    
+    // Yönetici ve muhasebe için boş dizi dön - filtre uygulanmaz
+    if (isAdmin || isMuhasebe) {
+      return [];
+    }
+    
+    // Zaten yüklenmiş ID'ler varsa kullan
+    if (assignedCustomerIds.length > 0) {
+      return assignedCustomerIds;
+    }
+    
+    // Yoksa yeniden yükle
+    return await fetchAssignedCustomerIds(user.id);
+  }, [user, isAdmin, isMuhasebe, assignedCustomerIds]);
 
   return {
     user,
     isAdmin,
-    isMuhasebe, // Muhasebe rolünü de döndür
+    isMuhasebe,
     loading,
     checkCustomerAccess,
     getAssignedCustomerIds,
-    filterCustomersByAccess
+    filterCustomersByAccess,
+    assignedCustomerIds
   };
 };

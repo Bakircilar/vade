@@ -9,11 +9,11 @@ import Dashboard from './pages/Dashboard';
 import CustomerList from './pages/CustomerList';
 import CustomerDetail from './pages/CustomerDetail';
 import PaymentList from './pages/PaymentList';
-import PaymentDetail from './pages/PaymentDetail'; // Yeni eklenen
-import Profile from './pages/Profile'; // Yeni eklenen
+import PaymentDetail from './pages/PaymentDetail';
+import Profile from './pages/Profile';
 import Login from './pages/Login';
-import UserAssignments from './pages/UserAssignments'; // Müşteri atama sayfası
-import AuthManager from './pages/AuthManager'; // Kullanıcı yönetim sayfası
+import UserAssignments from './pages/UserAssignments';
+import AuthManager from './pages/AuthManager';
 
 // Components
 import Header from './components/Header';
@@ -25,8 +25,8 @@ import './App.css';
 function App() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState('user'); // Varsayılan rol
-  const [isMuhasebe, setIsMuhasebe] = useState(false); // Muhasebe rolü kontrolü
+  const [userRole, setUserRole] = useState('user');
+  const [isMuhasebe, setIsMuhasebe] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -80,7 +80,7 @@ function App() {
       
       const { data, error } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, full_name')
         .eq('id', userId)
         .single();
 
@@ -94,6 +94,24 @@ function App() {
       
       // Muhasebe rolünü kontrol et
       setIsMuhasebe(role === 'muhasebe');
+      
+      // Kullanıcı adı eksikse ve oturum bilgisi varsa metadata'yı kontrol et
+      if (session?.user && (!data?.full_name || data.full_name.trim() === '')) {
+        // Metadata'dan full_name'i al
+        const fullName = session.user.user_metadata?.full_name;
+        
+        // Eğer metadata'da full_name varsa, profiles tablosunu güncelle
+        if (fullName && fullName.trim() !== '') {
+          await supabase
+            .from('profiles')
+            .upsert({
+              id: userId,
+              full_name: fullName,
+              role: role, // Mevcut rolü koru
+              updated_at: new Date().toISOString()
+            });
+        }
+      }
     } catch (error) {
       console.error('Rol getirme hatası:', error);
     } finally {
@@ -122,7 +140,7 @@ function App() {
               <Route path="/customers/:id" element={session ? <CustomerDetail /> : <Navigate to="/login" />} />
               <Route path="/payments" element={session ? <PaymentList /> : <Navigate to="/login" />} />
               <Route path="/payments/:id" element={session ? <PaymentDetail /> : <Navigate to="/login" />} />
-              <Route path="/import" element={session ? <ImportExcel /> : <Navigate to="/login" />} />
+              <Route path="/import" element={session && (isAdmin || isMuhasebeUser) ? <ImportExcel /> : <Navigate to="/login" />} />
               <Route path="/profile" element={session ? <Profile /> : <Navigate to="/login" />} />
               <Route path="/user-assignments" element={session && (isAdmin || isMuhasebeUser) ? <UserAssignments /> : <Navigate to="/" />} />
               <Route path="/auth-manager" element={session && isAdmin ? <AuthManager /> : <Navigate to="/" />} />

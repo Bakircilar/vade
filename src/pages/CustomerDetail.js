@@ -1,20 +1,32 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, Navigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-import { format, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { toast } from 'react-toastify';
-import CustomerNotes from '../components/CustomerNotes'; // CustomerNotes bileşenini import ediyoruz
+import CustomerNotes from '../components/CustomerNotes';
+import { useUserAccess } from '../helpers/userAccess'; 
 
 const CustomerDetail = () => {
   const { id } = useParams();
   const [customer, setCustomer] = useState(null);
   const [balance, setBalance] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
+  
+  // User access control
+  const { checkCustomerAccess } = useUserAccess();
 
   const fetchCustomerData = useCallback(async () => {
     setLoading(true);
     try {
+      // First check if user has access to this customer
+      const hasAccess = await checkCustomerAccess(id);
+      if (!hasAccess) {
+        setAccessDenied(true);
+        return;
+      }
+      
       // Get customer info
       const { data: customerData, error: customerError } = await supabase
         .from('customers')
@@ -43,13 +55,18 @@ const CustomerDetail = () => {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, checkCustomerAccess]);
 
   useEffect(() => {
     if (id) {
       fetchCustomerData();
     }
   }, [id, fetchCustomerData]);
+
+  if (accessDenied) {
+    toast.error('Bu müşteriye erişim izniniz bulunmuyor');
+    return <Navigate to="/customers" />;
+  }
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: '40px' }}>Yükleniyor...</div>;
@@ -88,13 +105,6 @@ const CustomerDetail = () => {
       ? parseFloat(balance.total_balance) 
       : (pastDueBalance + notDueBalance)
   ) : 0;
-
-  // Debug için bakiye değerlerini console'a yazdır
-  console.log('CustomerDetail.js - Hesaplanan değerler:', {
-    pastDueBalance,
-    notDueBalance,
-    totalBalance
-  });
 
   return (
     <div>
@@ -203,16 +213,13 @@ const CustomerDetail = () => {
         )}
       </div>
       
-      {/* CustomerNotes bileşenini çağırırken - SADECE BU BÖLÜM KALACAK */}
+      {/* CustomerNotes component */}
       <CustomerNotes 
         customerId={id} 
         customerBalance={totalBalance}
         pastDueBalance={pastDueBalance}
         notDueBalance={notDueBalance}
       />
-      
-      {/* Customer Notes Section - BU BÖLÜMÜ KALDIRIYORUZ */}
-      {/* Eskiden burada bir not ekleme formu vardı, artık kullanılmıyor */}
     </div>
   );
 };
