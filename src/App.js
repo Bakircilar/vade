@@ -9,10 +9,7 @@ import Dashboard from './pages/Dashboard';
 import CustomerList from './pages/CustomerList';
 import CustomerDetail from './pages/CustomerDetail';
 import PaymentList from './pages/PaymentList';
-<<<<<<< HEAD
 import EnhancedCustomerDetail from './pages/EnhancedCustomerDetail';
-=======
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
 import PaymentDetail from './pages/PaymentDetail';
 import Profile from './pages/Profile';
 import Login from './pages/Login';
@@ -141,11 +138,7 @@ function App() {
             <Routes>
               <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />
               <Route path="/customers" element={session ? <CustomerList /> : <Navigate to="/login" />} />
-<<<<<<< HEAD
               <Route path="/customers/:id" element={session ? <EnhancedCustomerDetail /> : <Navigate to="/login" />} />
-=======
-              <Route path="/customers/:id" element={session ? <CustomerDetail /> : <Navigate to="/login" />} />
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
               <Route path="/payments" element={session ? <PaymentList /> : <Navigate to="/login" />} />
               <Route path="/payments/:id" element={session ? <PaymentDetail /> : <Navigate to="/login" />} />
               <Route path="/import" element={session && (isAdmin || isMuhasebeUser) ? <ImportExcel /> : <Navigate to="/login" />} />

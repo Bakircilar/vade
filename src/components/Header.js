@@ -1,15 +1,9 @@
-<<<<<<< HEAD
 // src/components/Header.js
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import NotificationCenter from './NotificationCenter'; // NotificationCenter'ı import edin
 import ThemeToggle from './ThemeToggle'; // ThemeToggle'ı import edin
-=======
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { supabase } from '../services/supabase';
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
 
 const Header = ({ session, userRole }) => {
   const [userName, setUserName] = useState('');
@@ -67,21 +61,13 @@ const Header = ({ session, userRole }) => {
       justifyContent: 'space-between',
       alignItems: 'center',
       padding: '15px 20px',
-<<<<<<< HEAD
       backgroundColor: 'var(--card-background)',
-=======
-      backgroundColor: '#fff',
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
       boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
     }}>
       <Link to="/" style={{
         fontSize: '24px',
         fontWeight: 'bold',
-<<<<<<< HEAD
         color: 'var(--highlight-color)',
-=======
-        color: '#3498db',
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
         textDecoration: 'none',
       }}>
         Vade Takip Sistemi
@@ -90,7 +76,6 @@ const Header = ({ session, userRole }) => {
       <div>
         {session ? (
           <div style={{ display: 'flex', alignItems: 'center' }}>
-<<<<<<< HEAD
             {/* NotificationCenter bileşeni eklendi */}
             <NotificationCenter />
             
@@ -98,9 +83,6 @@ const Header = ({ session, userRole }) => {
             <ThemeToggle style={{ marginLeft: '15px' }} />
             
             <div style={{ marginLeft: '15px', marginRight: '15px', textAlign: 'right' }}>
-=======
-            <div style={{ marginRight: '15px', textAlign: 'right' }}>
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
               <div style={{ fontWeight: 'bold' }}>{userName || session.user.email}</div>
               <div style={{ 
                 fontSize: '12px', 
@@ -117,25 +99,17 @@ const Header = ({ session, userRole }) => {
               onClick={handleLogout}
               style={{
                 padding: '8px 12px',
-<<<<<<< HEAD
                 backgroundColor: 'var(--hover-color)',
                 border: 'none',
                 borderRadius: '4px',
                 cursor: 'pointer',
                 color: 'var(--text-color)',
-=======
-                backgroundColor: '#f1f1f1',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
               }}
             >
               Çıkış
             </button>
           </div>
         ) : (
-<<<<<<< HEAD
           <div style={{ display: 'flex', alignItems: 'center' }}>
             {/* Tema değiştirme butonu */}
             <ThemeToggle />
@@ -155,21 +129,6 @@ const Header = ({ session, userRole }) => {
               Giriş
             </Link>
           </div>
-=======
-          <Link 
-            to="/login"
-            style={{
-              padding: '8px 12px',
-              backgroundColor: '#3498db',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              textDecoration: 'none',
-            }}
-          >
-            Giriş
-          </Link>
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
         )}
       </div>
     </header>
