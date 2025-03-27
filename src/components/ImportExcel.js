@@ -265,77 +265,7 @@ const readExcelFile = (file) => {
     return isNaN(result) ? 0 : result;
   };
   
-  // Excel tarihini işleme yardımcı fonksiyonu
-const parseDateValue = (value) => {
-  if (!value) return null;
   
-  try {
-    // Debug: Orijinal tarih değerini logla
-    console.log("Tarih dönüştürme - Orijinal değer:", value, "Türü:", typeof value);
-    
-    // Excel tarihi numarik mi kontrol et (1900 tarih sistemi)
-    if (typeof value === 'number') {
-      // Excel tarihi (1900 sistemi) - 1 Ocak 1900'den itibaren gün sayısı
-      // NOT: Excel ve JavaScript'in tarih hesaplamasındaki farkları düzelt
-      // JavaScript Date: milisaniye cinsinden 1 Ocak 1970'den itibaren
-      // Excel: 1 Ocak 1900'den itibaren gün sayısı
-      // Excel 60. günü 29 Şubat 1900 kabul eder ama bu tarih gerçekte yoktur
-      // Bu yüzden 1 Mart 1900'den sonraki tarihler için 1 gün çıkarmak gerekir
-      
-      let excelDate = value;
-      
-      // Tarih Lotus 1-2-3 bug düzeltmesi (1900 yılı için yanlış artık yıl hesabı)
-      if (excelDate > 59) {
-        excelDate -= 1; // 29 Şubat 1900 tarihini düzelt (gerçekte olmayan tarih)
-      }
-      
-      // JavaScript tarihi: (Excel günü - 25569) * 86400000
-      // 25569: 1 Ocak 1970 - 1 Ocak 1900 arası gün farkı
-      const jsDate = new Date((excelDate - 25569) * 86400000);
-      
-      // UTC zaman dilimi sorununu düzelt - yerel saat dilimine çevir
-      const utcDate = new Date(jsDate.getTime() + jsDate.getTimezoneOffset() * 60000);
-      
-      console.log("Tarih dönüştürme - Hesaplanan tarih:", utcDate.toISOString());
-      return utcDate;
-    }
-    
-    // Tarih string formatında
-    if (typeof value === 'string') {
-      // Türkçe format (gg.aa.yyyy) kontrolü
-      const dateParts = value.split('.');
-      if (dateParts.length === 3) {
-        // Ay değerini 0-11 aralığına çevir (JavaScript Date)
-        const month = parseInt(dateParts[1], 10) - 1;
-        const day = parseInt(dateParts[0], 10);
-        const year = parseInt(dateParts[2], 10);
-        
-        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-          const date = new Date(year, month, day);
-          console.log("Tarih dönüştürme - Türkçe format:", date.toISOString());
-          return date;
-        }
-      }
-      
-      // ISO format denemesi (yyyy-mm-dd)
-      const isoDate = new Date(value);
-      if (!isNaN(isoDate.getTime())) {
-        console.log("Tarih dönüştürme - ISO format:", isoDate.toISOString());
-        return isoDate;
-      }
-    }
-    
-    // Tarih objesi kontrolü
-    if (value instanceof Date && !isNaN(value.getTime())) {
-      console.log("Tarih dönüştürme - Date nesnesi:", value.toISOString());
-      return value;
-    }
-  } catch (error) {
-    console.error("Tarih ayrıştırma hatası:", error, "Değer:", value);
-  }
-  
-  return null;
-};
 
   // Excel verilerini işleme - düzeltilmiş
 const processExcelData = (data) => {
