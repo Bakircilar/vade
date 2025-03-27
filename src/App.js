@@ -28,6 +28,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState('user');
   const [isMuhasebe, setIsMuhasebe] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -120,6 +121,10 @@ function App() {
     }
   };
 
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
   // Yönetici kontrolü
   const isAdmin = userRole === 'admin';
   const isMuhasebeUser = userRole === 'muhasebe';
@@ -131,9 +136,21 @@ function App() {
   return (
     <BrowserRouter>
       <div className="app">
-        <Header session={session} userRole={userRole} />
+        <Header 
+          session={session} 
+          userRole={userRole} 
+          toggleMobileMenu={toggleMobileMenu}
+          isMobileMenuOpen={isMobileMenuOpen}
+        />
         <div className="container">
-          {session && <Navigation userRole={userRole} isMuhasebe={isMuhasebe} />}
+          {session && (
+            <Navigation 
+              userRole={userRole} 
+              isMuhasebe={isMuhasebe} 
+              isMenuOpen={isMobileMenuOpen}
+              closeMenu={() => setIsMobileMenuOpen(false)}
+            />
+          )}
           <main className="content">
             <Routes>
               <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />

@@ -1,11 +1,11 @@
-// Key fix: Wait for access control and ensure immediate data fetch
-
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { toast } from 'react-toastify';
 import { useUserAccess } from '../helpers/userAccess';
 import AdvancedSearch from '../components/AdvancedSearch';
+import SearchBox from '../components/SearchBox';
+import ResponsiveTable from '../components/ResponsiveTable';
 
 const CustomerList = () => {
   const [customers, setCustomers] = useState([]);
@@ -13,6 +13,7 @@ const CustomerList = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
   // User access control - Get loading state
   const { isAdmin, isMuhasebe, filterCustomersByAccess, loading: accessLoading } = useUserAccess();
@@ -20,10 +21,26 @@ const CustomerList = () => {
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 0,
-    pageSize: 100,
+    pageSize: isMobile ? 50 : 100, // Küçük ekranlarda daha az kayıt göster
     total: 0,
     totalPages: 0
   });
+
+  // Ekran boyutu değişikliklerini izle
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      // Ekran boyutu değiştiğinde sayfa başına kayıt sayısını güncelle
+      setPagination(prev => ({
+        ...prev,
+        pageSize: mobile ? 50 : 100
+      }));
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Advanced search with loading state check
   const fetchCustomersWithSearch = async (criteria) => {
@@ -183,6 +200,11 @@ const CustomerList = () => {
     fetchCustomersPage(0);
   };
   
+  // Basic search handler
+  const handleBasicSearch = (value) => {
+    setSearchTerm(value);
+  };
+  
   // Get total customer count
   const fetchCustomerCount = async () => {
     try {
@@ -205,7 +227,7 @@ const CustomerList = () => {
   };
   
   // Fetch customers by page - FIXED to always load data
-  const fetchCustomersPage = async (page = 0, pageSize = 100) => {
+  const fetchCustomersPage = async (page = 0, pageSize = pagination.pageSize) => {
     setLoading(true);
     try {
       // First get total count
@@ -267,11 +289,6 @@ const CustomerList = () => {
     }
   };
   
-  // Basic search handler
-  const handleBasicSearch = (e) => {
-    setSearchTerm(e.target.value);
-  };
-  
   // Filter customers by search term
   const filteredCustomers = React.useMemo(() => {
     if (!searchTerm.trim()) return customers;
@@ -317,11 +334,40 @@ const CustomerList = () => {
       </div>
     );
   }
+  
+  // Tablo sütunları
+  const columns = [
+    {
+      header: "Müşteri Kodu",
+      accessor: "code",
+      render: (row) => row.code || '-'
+    },
+    {
+      header: "Müşteri Adı",
+      accessor: "name",
+      render: (row) => row.name || '-'
+    },
+    {
+      header: "Sektör",
+      accessor: "sector_code",
+      render: (row) => row.sector_code || '-'
+    }
+  ];
+  
+  // Tablo işlemleri
+  const renderActions = (customer) => (
+    <Link
+      to={`/customers/${customer.id}`}
+      className="btn btn-primary"
+      style={{ padding: '4px 8px', fontSize: '12px' }}
+    >
+      Detay
+    </Link>
+  );
 
-  // Rest of component remains the same
   return (
     <div>
-      <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '20px' }}>
+      <h1 style={{ fontSize: isMobile ? '20px' : '24px', fontWeight: 'bold', marginBottom: '20px' }}>
         Müşteri Listesi
       </h1>
       
@@ -330,59 +376,20 @@ const CustomerList = () => {
         onReset={handleResetSearch}
       />
       
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <div style={{ width: '60%' }}>
-          <input
-            type="text"
-            placeholder="Müşteri adı, kodu veya sektör ile ara..."
-            value={searchTerm}
-            onChange={handleBasicSearch}
-            style={{ width: '100%', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
-          />
-        </div>
-        
-        <div>
-          <button 
-            onClick={() => advancedSearchCriteria ? fetchCustomersWithSearch(advancedSearchCriteria) : fetchCustomersPage(pagination.page)}
-            className="btn btn-primary"
-            disabled={loading}
-          >
-            {loading ? 'Yükleniyor...' : 'Yenile'}
-          </button>
-        </div>
-      </div>
+      <SearchBox
+        placeholder="Müşteri adı, kodu veya sektör ile ara..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        buttonText={loading ? "Yükleniyor..." : "Ara"}
+      />
       
       <div className="card">
-        <div style={{ overflowX: 'auto' }}>
-          <table>
-            <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--card-background)', zIndex: 1 }}>
-              <tr>
-                <th>Müşteri Kodu</th>
-                <th>Müşteri Adı</th>
-                <th>Sektör</th>
-                <th>İşlemler</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCustomers.map((customer) => (
-                <tr key={customer.id}>
-                  <td>{customer.code || '-'}</td>
-                  <td>{customer.name || '-'}</td>
-                  <td>{customer.sector_code || '-'}</td>
-                  <td>
-                    <Link
-                      to={`/customers/${customer.id}`}
-                      className="btn btn-primary"
-                      style={{ padding: '4px 8px', fontSize: '12px' }}
-                    >
-                      Detay
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ResponsiveTable
+          columns={columns}
+          data={filteredCustomers}
+          actions={renderActions}
+          emptyMessage="Müşteri bulunamadı."
+        />
         
         {/* Pagination controls */}
         {!advancedSearchCriteria && pagination.totalPages > 1 && (
@@ -391,7 +398,8 @@ const CustomerList = () => {
             justifyContent: 'center', 
             gap: '10px', 
             margin: '20px 0',
-            alignItems: 'center' 
+            alignItems: 'center',
+            flexWrap: 'wrap'
           }}>
             <button
               onClick={() => handlePageChange(0)}

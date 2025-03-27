@@ -23,8 +23,9 @@ body {
 
 .content {
   flex: 1;
-  padding: 20px;
+  padding: 15px;
   overflow-y: auto;
+  width: 100%;
 }
 
 .loading {
@@ -40,7 +41,9 @@ body {
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   margin-bottom: 20px;
-  padding: 20px;
+  padding: 15px;
+  overflow-x: auto;
+  word-wrap: break-word;
 }
 
 .btn {
@@ -52,6 +55,15 @@ body {
   cursor: pointer;
   text-decoration: none;
   font-weight: bold;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .btn {
+    padding: 8px 12px;
+    font-size: 13px;
+    margin: 3px;
+  }
 }
 
 .btn-primary {
@@ -74,20 +86,78 @@ body {
   color: white;
 }
 
+/* Responsive table styles */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 400px; /* Ensure table has minimum width */
 }
 
 table th, table td {
-  padding: 12px;
+  padding: 12px 8px;
   text-align: left;
   border-bottom: 1px solid #ddd;
+}
+
+@media (max-width: 768px) {
+  table th, table td {
+    padding: 8px 4px;
+    font-size: 13px;
+  }
 }
 
 table th {
   background-color: #f2f2f2;
   font-weight: bold;
+}
+
+/* Mobile friendly card-based tables for very small screens */
+.card-table {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .regular-table {
+    display: none;
+  }
+  
+  .card-table {
+    display: block;
+  }
+  
+  .table-card {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+  }
+  
+  .table-card .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px solid #eee;
+  }
+  
+  .table-card .row:last-child {
+    border-bottom: none;
+  }
+  
+  .table-card .label {
+    font-weight: bold;
+    flex: 1;
+  }
+  
+  .table-card .value {
+    flex: 2;
+    text-align: right;
+  }
 }
 
 .form-group {
@@ -100,24 +170,32 @@ table th {
   font-weight: bold;
 }
 
-.form-group input {
+.form-group input, .form-group select, .form-group textarea {
   width: 100%;
   padding: 8px;
   border: 1px solid #ddd;
   border-radius: 4px;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .form-group input, .form-group select, .form-group textarea {
+    font-size: 16px; /* Prevents iOS zoom */
+    padding: 10px 8px;
+  }
 }
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 15px;
   margin-bottom: 20px;
 }
 
 .stat-card {
   background-color: white;
   border-radius: 8px;
-  padding: 20px;
+  padding: 15px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
@@ -147,4 +225,63 @@ table th {
 .badge-info {
   background-color: #e3f2fd;
   color: #2c5282;
+}
+
+/* Responsive grid layouts */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+}
+
+.grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+}
+
+@media (max-width: 992px) {
+  .grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .grid-2, .grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 576px) {
+  .grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile menu overlay */
+.mobile-menu-overlay {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-menu-overlay.active {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 90;
+  }
 }
