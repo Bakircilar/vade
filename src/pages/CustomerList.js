@@ -1,17 +1,26 @@
+<<<<<<< HEAD
 // src/pages/CustomerList.js
+=======
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { toast } from 'react-toastify';
 import { useUserAccess } from '../helpers/userAccess';
+<<<<<<< HEAD
 import AdvancedSearch from '../components/AdvancedSearch'; // Gelişmiş arama bileşenini import edin
+=======
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
 
 const CustomerList = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+<<<<<<< HEAD
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState(null);
+=======
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
   
   // User access control
   const { isAdmin, isMuhasebe, filterCustomersByAccess } = useUserAccess();
@@ -24,6 +33,7 @@ const CustomerList = () => {
     totalPages: 0
   });
   
+<<<<<<< HEAD
   // Gelişmiş arama ile veri çekme
   const fetchCustomersWithSearch = async (criteria) => {
     setLoading(true);
@@ -183,6 +193,8 @@ const CustomerList = () => {
     fetchCustomersPage(0);
   };
   
+=======
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
   // Toplam müşteri sayısını al
   const fetchCustomerCount = async () => {
     try {
@@ -250,12 +262,16 @@ const CustomerList = () => {
   
   // İlk sayfa için veri çek
   useEffect(() => {
+<<<<<<< HEAD
     // Arama kriterleri varsa onunla getir, yoksa normal sayfalama
     if (advancedSearchCriteria) {
       fetchCustomersWithSearch(advancedSearchCriteria);
     } else {
       fetchCustomersPage(0);
     }
+=======
+    fetchCustomersPage(0);
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
   }, []);
   
   // Sayfa değiştirme
@@ -266,7 +282,11 @@ const CustomerList = () => {
   };
   
   // Arama işlemi
+<<<<<<< HEAD
   const handleBasicSearch = (e) => {
+=======
+  const handleSearch = (e) => {
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
     setSearchTerm(e.target.value);
   };
   
@@ -323,26 +343,38 @@ const CustomerList = () => {
         Müşteri Listesi
       </h1>
       
+<<<<<<< HEAD
       {/* Gelişmiş Arama Bileşeni */}
       <AdvancedSearch 
         onSearch={handleSearch}
         onReset={handleResetSearch}
       />
       
+=======
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div style={{ width: '60%' }}>
           <input
             type="text"
             placeholder="Müşteri adı, kodu veya sektör ile ara..."
             value={searchTerm}
+<<<<<<< HEAD
             onChange={handleBasicSearch}
             style={{ width: '100%', padding: '8px', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+=======
+            onChange={handleSearch}
+            style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
           />
         </div>
         
         <div>
           <button 
+<<<<<<< HEAD
             onClick={() => advancedSearchCriteria ? fetchCustomersWithSearch(advancedSearchCriteria) : fetchCustomersPage(pagination.page)}
+=======
+            onClick={() => fetchCustomersPage(pagination.page)}
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
             className="btn btn-primary"
             disabled={loading}
           >
@@ -354,7 +386,11 @@ const CustomerList = () => {
       <div className="card">
         <div style={{ overflowX: 'auto' }}>
           <table>
+<<<<<<< HEAD
             <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--card-background)', zIndex: 1 }}>
+=======
+            <thead style={{ position: 'sticky', top: 0, backgroundColor: '#fff', zIndex: 1 }}>
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
               <tr>
                 <th>Müşteri Kodu</th>
                 <th>Müşteri Adı</th>
@@ -384,7 +420,11 @@ const CustomerList = () => {
         </div>
         
         {/* Sayfalama kontrolleri */}
+<<<<<<< HEAD
         {!advancedSearchCriteria && pagination.totalPages > 1 && (
+=======
+        {pagination.totalPages > 1 && (
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
           <div style={{ 
             display: 'flex', 
             justifyContent: 'center', 
@@ -437,7 +477,11 @@ const CustomerList = () => {
             <p>Yükleniyor...</p>
           ) : (
             <p>
+<<<<<<< HEAD
               {searchTerm.trim() || advancedSearchCriteria ? 
+=======
+              {searchTerm.trim() ? 
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
                 `${filteredCustomers.length} müşteri bulundu` : 
                 `${customers.length} müşteri gösteriliyor (toplam ${pagination.total})`}
             </p>

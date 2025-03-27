@@ -12,7 +12,11 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.4.0",
+<<<<<<< HEAD
     "react-scripts": "^5.0.1",
+=======
+    "react-scripts": "5.0.1",
+>>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
     "react-toastify": "^11.0.5",
     "recharts": "^2.15.1",
     "web-vitals": "^2.1.4",
