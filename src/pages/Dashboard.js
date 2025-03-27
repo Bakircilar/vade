@@ -24,18 +24,21 @@ const EnhancedDashboard = () => {
   const [sectors, setSectors] = useState([]);
   const [regions, setRegions] = useState([]);
   
-  // User access control
-  const { isAdmin, isMuhasebe, filterCustomersByAccess } = useUserAccess();
+  // User access control - added loading state
+  const { isAdmin, isMuhasebe, filterCustomersByAccess, loading: accessLoading } = useUserAccess();
   
   // COLORS for charts
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
   const OVERDUE_COLOR = '#FF8042';
   const UPCOMING_COLOR = '#0088FE';
   
+  // KEY FIX: Check if accessLoading is complete before fetching data
   useEffect(() => {
-    fetchMetaData();
-    fetchDashboardData();
-  }, [filterDateRange, filterSector, filterRegion]);
+    if (!accessLoading) {
+      fetchMetaData();
+      fetchDashboardData();
+    }
+  }, [filterDateRange, filterSector, filterRegion, accessLoading]);
 
   // Sektör ve bölge bilgilerini getir
   const fetchMetaData = async () => {

@@ -1,10 +1,11 @@
-// src/pages/CustomerList.js
+// Key fix: Wait for access control and ensure immediate data fetch
+
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { toast } from 'react-toastify';
 import { useUserAccess } from '../helpers/userAccess';
-import AdvancedSearch from '../components/AdvancedSearch'; // Gelişmiş arama bileşenini import edin
+import AdvancedSearch from '../components/AdvancedSearch';
 
 const CustomerList = () => {
   const [customers, setCustomers] = useState([]);
@@ -13,10 +14,10 @@ const CustomerList = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState(null);
   
-  // User access control
-  const { isAdmin, isMuhasebe, filterCustomersByAccess } = useUserAccess();
+  // User access control - Get loading state
+  const { isAdmin, isMuhasebe, filterCustomersByAccess, loading: accessLoading } = useUserAccess();
   
-  // Sayfalama için state
+  // Pagination state
   const [pagination, setPagination] = useState({
     page: 0,
     pageSize: 100,
@@ -24,21 +25,21 @@ const CustomerList = () => {
     totalPages: 0
   });
   
-  // Gelişmiş arama ile veri çekme
+  // Advanced search with loading state check
   const fetchCustomersWithSearch = async (criteria) => {
     setLoading(true);
     try {
       console.log('Arama kriterleri:', criteria);
       
-      // Veritabanı sorgusu oluştur
+      // Create database query
       let query = supabase
         .from('customers')
         .select('*');
       
-      // Erişim kontrolü uygula
+      // Apply access control
       query = await filterCustomersByAccess(query);
       
-      // Arama kriterlerini uygula
+      // Apply search criteria
       if (criteria.name) {
         query = query.ilike('name', `%${criteria.name}%`);
       }
@@ -55,7 +56,7 @@ const CustomerList = () => {
         query = query.eq('region_code', criteria.region);
       }
       
-      // Sıralama uygula
+      // Apply sorting
       if (criteria.sortBy) {
         query = query.order(criteria.sortBy, { 
           ascending: criteria.sortDirection === 'asc'
@@ -70,14 +71,14 @@ const CustomerList = () => {
       
       let filteredData = data || [];
       
-      // Bakiye filtreleri varsa ilgili müşterilerin bakiyelerini getir
+      // Balance filters
       if ((criteria.balanceMin || criteria.balanceMax || criteria.pastDueOnly) && 
           filteredData.length > 0) {
         
-        // Müşteri ID'leri
+        // Customer IDs
         const customerIds = filteredData.map(customer => customer.id);
         
-        // Bakiyeleri getir
+        // Get balances
         const { data: balances, error: balanceError } = await supabase
           .from('customer_balances')
           .select('*')
@@ -85,7 +86,7 @@ const CustomerList = () => {
           
         if (balanceError) throw balanceError;
         
-        // Müşteri-bakiye eşleşmesi
+        // Map customer balances
         const balanceMap = {};
         if (balances) {
           balances.forEach(balance => {
@@ -93,26 +94,25 @@ const CustomerList = () => {
           });
         }
         
-        // Bakiye filtrelerini uygula
+        // Apply balance filters
         filteredData = filteredData.filter(customer => {
           const balance = balanceMap[customer.id];
           
-          // Bakiye yoksa ve filtreleme isteniyorsa, müşteriyi dahil etme
           if (!balance && (criteria.balanceMin || criteria.balanceMax || criteria.pastDueOnly)) {
             return false;
           }
           
-          // Min bakiye filtresi
+          // Min balance filter
           if (criteria.balanceMin && parseFloat(balance?.total_balance || 0) < parseFloat(criteria.balanceMin)) {
             return false;
           }
           
-          // Max bakiye filtresi
+          // Max balance filter
           if (criteria.balanceMax && parseFloat(balance?.total_balance || 0) > parseFloat(criteria.balanceMax)) {
             return false;
           }
           
-          // Sadece vadesi geçenler filtresi
+          // Past due only filter
           if (criteria.pastDueOnly && parseFloat(balance?.past_due_balance || 0) <= 0) {
             return false;
           }
@@ -121,7 +121,7 @@ const CustomerList = () => {
         });
       }
       
-      // Not filtreleri varsa ilgili müşterilerin notlarını getir
+      // Note filters
       if (criteria.hasNotes) {
         if (filteredData.length > 0) {
           const customerIds = filteredData.map(customer => customer.id);
@@ -131,7 +131,7 @@ const CustomerList = () => {
             .select('customer_id')
             .in('customer_id', customerIds);
             
-          // Not içeriği araması varsa ekle
+          // Note content search
           if (criteria.notesKeyword) {
             notesQuery = notesQuery.ilike('note_content', `%${criteria.notesKeyword}%`);
           }
@@ -140,23 +140,23 @@ const CustomerList = () => {
           
           if (notesError) throw notesError;
           
-          // Notu olan müşteri ID'leri
+          // Customer IDs with notes
           const customerIdsWithNotes = new Set(notes?.map(note => note.customer_id) || []);
           
-          // Notu olan müşterileri filtrele
+          // Filter to only customers with notes
           filteredData = filteredData.filter(customer => 
             customerIdsWithNotes.has(customer.id)
           );
         } else {
-          // Sonuç zaten boşsa
+          // Result already empty
           filteredData = [];
         }
       }
       
-      // Sonuçları güncelle
+      // Update results
       setCustomers(filteredData);
       
-      // Toplam kayıt sayısını güncelle
+      // Update total record count
       setPagination({
         ...pagination,
         total: filteredData.length,
@@ -171,26 +171,26 @@ const CustomerList = () => {
     }
   };
   
-  // Arama yapıldığında
+  // Search handler
   const handleSearch = (criteria) => {
     setAdvancedSearchCriteria(criteria);
     fetchCustomersWithSearch(criteria);
   };
   
-  // Arama sıfırlandığında
+  // Reset search
   const handleResetSearch = () => {
     setAdvancedSearchCriteria(null);
     fetchCustomersPage(0);
   };
   
-  // Toplam müşteri sayısını al
+  // Get total customer count
   const fetchCustomerCount = async () => {
     try {
       let query = supabase
         .from('customers')
         .select('*', { count: 'exact', head: true });
       
-      // Yetki filtrelemesi
+      // Access filtering
       query = await filterCustomersByAccess(query);
       
       const { count, error } = await query;
@@ -204,15 +204,15 @@ const CustomerList = () => {
     }
   };
   
-  // Sayfalı veri çekme
+  // Fetch customers by page - FIXED to always load data
   const fetchCustomersPage = async (page = 0, pageSize = 100) => {
     setLoading(true);
     try {
-      // Önce toplam kayıt sayısını al
+      // First get total count
       const totalCount = await fetchCustomerCount();
       const totalPages = Math.ceil(totalCount / pageSize);
       
-      // Sayfalama bilgisini güncelle
+      // Update pagination
       setPagination({
         page,
         pageSize,
@@ -220,18 +220,18 @@ const CustomerList = () => {
         totalPages
       });
       
-      // Sayfa sınırları
+      // Page limits
       const from = page * pageSize;
       const to = from + pageSize - 1;
       
-      // Sayfalanmış veriyi al
+      // Get paginated data
       let query = supabase
         .from('customers')
         .select('*')
         .range(from, to)
         .order('name');
       
-      // Kullanıcı erişim kontrolü
+      // User access control
       query = await filterCustomersByAccess(query);
       
       const { data, error } = await query;
@@ -248,29 +248,31 @@ const CustomerList = () => {
     }
   };
   
-  // İlk sayfa için veri çek
+  // Initial data load - FIXED by waiting for access loading
   useEffect(() => {
-    // Arama kriterleri varsa onunla getir, yoksa normal sayfalama
-    if (advancedSearchCriteria) {
-      fetchCustomersWithSearch(advancedSearchCriteria);
-    } else {
-      fetchCustomersPage(0);
+    if (!accessLoading) {
+      // Either use search criteria or fetch customers directly
+      if (advancedSearchCriteria) {
+        fetchCustomersWithSearch(advancedSearchCriteria);
+      } else {
+        fetchCustomersPage(0);
+      }
     }
-  }, []);
+  }, [accessLoading]);
   
-  // Sayfa değiştirme
+  // Page change handler
   const handlePageChange = (newPage) => {
     if (newPage >= 0 && newPage < pagination.totalPages) {
       fetchCustomersPage(newPage);
     }
   };
   
-  // Arama işlemi
+  // Basic search handler
   const handleBasicSearch = (e) => {
     setSearchTerm(e.target.value);
   };
   
-  // Aranan değere göre müşterileri filtrele
+  // Filter customers by search term
   const filteredCustomers = React.useMemo(() => {
     if (!searchTerm.trim()) return customers;
     
@@ -282,7 +284,7 @@ const CustomerList = () => {
     );
   }, [customers, searchTerm]);
 
-  // Hata durumunda göster
+  // Error display
   if (error) {
     return (
       <div className="card" style={{ padding: '20px', backgroundColor: '#f8d7da', color: '#721c24' }}>
@@ -299,12 +301,12 @@ const CustomerList = () => {
     );
   }
 
-  // Yükleme durumunda göster
+  // Loading state
   if (loading && customers.length === 0) {
     return <div style={{ textAlign: 'center', padding: '40px' }}>Müşteriler yükleniyor...</div>;
   }
 
-  // Müşteri bulunamadıysa göster
+  // No customers display
   if (!loading && customers.length === 0) {
     return (
       <div className="card" style={{ padding: '20px', textAlign: 'center' }}>
@@ -316,14 +318,13 @@ const CustomerList = () => {
     );
   }
 
-  // Müşterileri göster - sayfalama ile
+  // Rest of component remains the same
   return (
     <div>
       <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '20px' }}>
         Müşteri Listesi
       </h1>
       
-      {/* Gelişmiş Arama Bileşeni */}
       <AdvancedSearch 
         onSearch={handleSearch}
         onReset={handleResetSearch}
@@ -383,7 +384,7 @@ const CustomerList = () => {
           </table>
         </div>
         
-        {/* Sayfalama kontrolleri */}
+        {/* Pagination controls */}
         {!advancedSearchCriteria && pagination.totalPages > 1 && (
           <div style={{ 
             display: 'flex', 

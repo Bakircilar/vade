@@ -161,16 +161,15 @@ const PaymentList = () => {
   const filterType = searchParams.get('filter') || 'all';
   
   const [balances, setBalances] = useState([]);
-  const [allRecords, setAllRecords] = useState([]); // Tüm kayıtları sakla
+  const [allRecords, setAllRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dateRange, setDateRange] = useState(30); // Yaklaşan vadeler için 30 gün
   const [exporting, setExporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState(''); // Arama terimi için state
-  const [initialLoadDone, setInitialLoadDone] = useState(false); // Başlangıç yüklemesi tamamlandı mı
   
   // User access control
-  const { isAdmin, isMuhasebe, getAssignedCustomerIds } = useUserAccess();
+  const { isAdmin, isMuhasebe, getAssignedCustomerIds, loading: accessLoading } = useUserAccess();
   
   // Sıralama için state
   const [sortConfig, setSortConfig] = useState({
@@ -238,14 +237,8 @@ const PaymentList = () => {
     });
   };
 
-  // Veri getirme fonksiyonu - hata düzeltildi
+  // Veri getirme fonksiyonu - KEY FIX - REMOVED initialLoadDone CHECK
   const fetchData = async (force = false) => {
-    // Eğer başlangıç yüklemesi yapıldıysa ve zorlanmıyorsa, tekrar yükleme
-    if (initialLoadDone && !force) {
-      console.log('Veri zaten yüklendi, tekrar yükleme yapılmıyor');
-      return;
-    }
-
     setLoading(true);
     try {
       console.log("Veri yükleniyor... Filtre tipi:", filterType);
@@ -334,7 +327,6 @@ const PaymentList = () => {
           totalBalance: 0
         });
         setLoading(false);
-        setInitialLoadDone(true);
         return;
       }
       
@@ -521,8 +513,6 @@ const PaymentList = () => {
       // Bakiyeleri ayarla
       setBalances(filteredBalances);
       
-      // İşlem sonunda initialLoadDone'ı true yapın
-      setInitialLoadDone(true);
     } catch (err) {
       console.error("Veri çekerken hata:", err);
       setError(err.message);
@@ -658,23 +648,21 @@ const PaymentList = () => {
   }, [balances, searchTerm]);
 
   // İlk yükleme için ve filtre değişikliklerinde verileri getir
+  // KEY FIX: Wait for access loading before fetching data
   useEffect(() => {
-    console.log('PaymentList - Filtre useEffect tetiklendi:', { filterType, dateRange, search: location.search });
-    fetchData(true); // Yeni filtreyi uygulamak için force true
-  }, [filterType, dateRange, location.search]);
+    if (!accessLoading) {
+      console.log('PaymentList - Filtre useEffect tetiklendi:', { filterType, dateRange, search: location.search });
+      fetchData(true); // Yeni filtreyi uygulamak için force true
+    }
+  }, [filterType, dateRange, location.search, accessLoading]);
 
-  // Komponent ilk yüklendiğinde de veri getir
+  // KEY FIX: Initial data load - removed timeout and accessLoading check
   useEffect(() => {
-    console.log('PaymentList - İlk yükleme useEffect tetiklendi');
-    
-    // Bileşen ilk yüklendiğinde zorla veri getir
-    const timer = setTimeout(() => {
-      console.log('PaymentList - İlk yükleme için fetchData çağrılıyor');
-      fetchData(true);
-    }, 100);
-    
-    return () => clearTimeout(timer);
-  }, []);
+    if (!accessLoading) {
+      console.log('PaymentList - İlk yükleme useEffect tetiklendi');
+      fetchData(true); // Force data fetch on initial render
+    }
+  }, [accessLoading]);
 
   // Sıralama değiştiğinde verileri yeniden sırala
   useEffect(() => {
@@ -872,7 +860,6 @@ const PaymentList = () => {
         <p>{error}</p>
         <button 
           onClick={() => {
-            setInitialLoadDone(false);
             fetchData(true);
           }} 
           className="btn btn-warning"
@@ -926,7 +913,6 @@ const PaymentList = () => {
           
           <button 
             onClick={() => {
-              setInitialLoadDone(false);
               fetchData(true);
             }} 
             className="btn"
@@ -1180,7 +1166,6 @@ const PaymentList = () => {
             customerName={quickNoteData.customerName}
             onClose={closeQuickNote}
             onSubmit={() => {
-              setInitialLoadDone(false);
               fetchData(true);
             }}
           />

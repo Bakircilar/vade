@@ -19,18 +19,20 @@ const EnhancedCustomerDetail = () => {
   const [accessDenied, setAccessDenied] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   
-  // User access control
+  // User access control - include loading state
   const { user, isAdmin, isMuhasebe, loading: accessLoading } = useUserAccess();
 
+  // Fetch customer data - memoized to prevent recreating the function
   const fetchCustomerData = useCallback(async () => {
-    if (accessLoading) return; // Erişim kontrolü yüklenmeden devam etme
+    // Don't proceed if access control is still loading
+    if (accessLoading) return;
     
     setLoading(true);
     try {
       console.log('Müşteri detayı yükleniyor, ID:', id);
       console.log('Kullanıcı rolleri:', { isAdmin, isMuhasebe });
       
-      // Önce müşteri bilgilerini getir
+      // First get customer information
       const { data: customerData, error: customerError } = await supabase
         .from('customers')
         .select('*, customer_classifications(*)')
@@ -41,16 +43,16 @@ const EnhancedCustomerDetail = () => {
         console.error("Müşteri bilgisi alınamadı:", customerError);
         if (customerError.code === 'PGRST116') {
           toast.error('Müşteri bulunamadı');
-          return; // Müşteri yoksa işlemi sonlandır
+          return; // Stop if customer not found
         }
         throw customerError;
       }
       
-      // Müşteri varsa, erişim kontrolü yap - Admin ve muhasebe kullanıcılarına hemen erişim ver
+      // Customer exists, check access control - give immediate access to admin and muhasebe users
       console.log('Müşteri bulundu:', customerData);
       console.log('isAdmin:', isAdmin, 'isMuhasebe:', isMuhasebe);
       
-      // Admin veya muhasebe değilse erişim kontrolü yap
+      // If not admin or muhasebe, check access control
       if (!isAdmin && !isMuhasebe) {
         if (!user) {
           setAccessDenied(true);
@@ -59,7 +61,7 @@ const EnhancedCustomerDetail = () => {
         
         console.log('Kullanıcı erişimi kontrol ediliyor...');
         
-        // Bu kullanıcının bu müşteriye erişimi var mı kontrol et
+        // Check if this user has access to this customer
         const { data, error } = await supabase
           .from('user_customer_assignments')
           .select('id')
@@ -87,7 +89,7 @@ const EnhancedCustomerDetail = () => {
         console.log('Admin veya muhasebe kullanıcısı, tüm müşterilere erişim var');
       }
 
-      // Erişim varsa müşteri bakiyesini getir
+      // If we have access, get customer balance
       const { data: balanceData, error: balanceError } = await supabase
         .from('customer_balances')
         .select('*')
@@ -108,16 +110,19 @@ const EnhancedCustomerDetail = () => {
     }
   }, [id, user, isAdmin, isMuhasebe, accessLoading]);
 
+  // Initial data load - wait for access control to be ready
   useEffect(() => {
     if (id && !accessLoading) {
       fetchCustomerData();
     }
   }, [id, fetchCustomerData, accessLoading]);
 
+  // Loading state
   if (loading || accessLoading) {
     return <div style={{ textAlign: 'center', padding: '40px' }}>Yükleniyor...</div>;
   }
 
+  // Access denied state
   if (accessDenied) {
     return (
       <div style={{ textAlign: 'center', padding: '40px' }}>
@@ -134,6 +139,7 @@ const EnhancedCustomerDetail = () => {
     );
   }
 
+  // No customer found state
   if (!customer) {
     return (
       <div style={{ textAlign: 'center', padding: '40px' }}>
@@ -148,20 +154,20 @@ const EnhancedCustomerDetail = () => {
   // Check if we have any balance data
   const hasBalance = balance !== null;
   
-  // Bakiye değerlerini hesapla - VadeHelper kullanarak
+  // Calculate balance values using VadeHelper
   const pastDueBalance = hasBalance ? VadeHelper.parseAmount(balance.past_due_balance) : 0;
   const notDueBalance = hasBalance ? VadeHelper.parseAmount(balance.not_due_balance) : 0;
   const totalBalance = hasBalance ? VadeHelper.calculateTotal(balance) : 0;
   
-  // Bakiye analizi
+  // Balance analysis
   const balanceAnalysis = VadeHelper.analyzeBalance(balance);
   
-  // Müşteri sınıflandırması
+  // Customer classification
   const classification = customer.customer_classifications && customer.customer_classifications.length > 0 
     ? customer.customer_classifications[0] 
     : null;
   
-  // Sınıflandırma rengini belirle
+  // Classification color
   const getClassificationColor = (classification) => {
     if (!classification) return '#f8f9fa';
     
@@ -176,7 +182,7 @@ const EnhancedCustomerDetail = () => {
     }
   };
   
-  // Para birimi formatla
+  // Format currency
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('tr-TR', { 
       style: 'currency', 
