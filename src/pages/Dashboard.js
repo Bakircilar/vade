@@ -75,7 +75,7 @@ const Dashboard = () => {
           if (!isAdmin && !isMuhasebe && assignedCustomerIds.length > 0) {
             balanceQuery = balanceQuery.in('customer_id', assignedCustomerIds);
           } else if (!isAdmin && !isMuhasebe) {
-            // Hiç atanmış müşteri yoksa, hiçbir müşteri gösterme
+            // Hiç atanmış müşteri yoksa ve admin veya muhasebe değilse
             balanceQuery = balanceQuery.eq('customer_id', '00000000-0000-0000-0000-000000000000');
           }
           
@@ -209,7 +209,7 @@ const Dashboard = () => {
     fetchData();
   }, [isAdmin, isMuhasebe, filterCustomersByAccess, assignedCustomerIds]);
 
-  // Kalan gün hesapla
+  // Kalan gün hesapla - DÜZELTME YAPILDI
   const calculateDaysLeft = (dueDateStr) => {
     if (!dueDateStr) return null;
     
@@ -223,14 +223,13 @@ const Dashboard = () => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
-      // Tarih farkını hesapla (milisaniye cinsinden)
-      const diffMs = dueDate - today;
-      
-      // Milisaniyeleri gün olarak çevir
+      // Tarih farkını hesapla (gün cinsinden)
+      // Math.floor ile tam gün farkını hesaplıyoruz
+      const diffMs = dueDate.getTime() - today.getTime();
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
       
       // Debug: Tarih bilgilerini konsola yaz
-      console.log(`Kalan gün hesaplaması: Vade=${dueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
+      console.log(`[Dashboard] Kalan gün hesaplaması (DÜZELTME SONRASI): Vade=${dueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
       
       return diffDays;
     } catch (err) {

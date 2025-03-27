@@ -467,9 +467,44 @@ const PaymentList = () => {
       
       if (filterType === 'upcoming') {
         // Sadece yaklaşan vadeli ve 100 TL üzeri bakiyeleri al
-        filteredBalances = processedBalances.filter(balance => 
-          balance.is_upcoming && balance.calculated_not_due > VadeHelper.MIN_BALANCE
-        );
+        // NOT: Sadece not_due_balance ve not_due_date alanlarına bakacağız
+        filteredBalances = processedBalances.filter(balance => {
+          // Vadesi geçmemiş bakiye 100 TL'den fazla olmalı
+          if (balance.calculated_not_due <= VadeHelper.MIN_BALANCE) {
+            return false;
+          }
+          
+          // not_due_date alanı olmalı
+          if (!balance.not_due_date) {
+            return false;
+          }
+          
+          // Tarih kontrolü - bugün ve gelecekteki tarihleri dahil edelim
+          try {
+            const notDueDate = new Date(balance.not_due_date);
+            notDueDate.setHours(0, 0, 0, 0);
+            
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            
+            const futureDate = addDays(today, dateRange);
+            
+            // Sadece bugün ve gelecekteki tarihler
+            if (notDueDate >= today && notDueDate <= futureDate) {
+              console.log(`Yaklaşan vade KABUL: ${balance.customers?.name}, Vade: ${notDueDate.toISOString()}`);
+              
+              // Vadesi geçmemiş tarihi effective_due_date olarak ayarla
+              // Bu şekilde sıralama ve badge doğru çalışacak
+              balance.effective_due_date = notDueDate.toISOString();
+              return true;
+            }
+            
+            return false;
+          } catch (err) {
+            console.error("Tarih işleme hatası (not_due_date):", err, balance.not_due_date);
+            return false;
+          }
+        });
       } 
       else if (filterType === 'overdue') {
         // Sadece vadesi geçmiş ve 100 TL üzeri bakiyeleri al
@@ -502,6 +537,20 @@ const PaymentList = () => {
     if (!sortConfig.key) {
       // Varsayılan sıralama - tarihe göre
       return data.sort((a, b) => {
+        // Yaklaşanlar görünümünde sadece not_due_date'e bakıyoruz
+        if (filterType === 'upcoming') {
+          if (!a.not_due_date && !b.not_due_date) return 0;
+          if (!a.not_due_date) return 1;
+          if (!b.not_due_date) return -1;
+          
+          const aDate = new Date(a.not_due_date);
+          const bDate = new Date(b.not_due_date);
+          
+          // En yakın vadeler önce
+          return aDate - bDate;
+        }
+        
+        // Diğer görünümler için standart effective_due_date kontrolü
         if (!a.effective_due_date && !b.effective_due_date) return 0;
         if (!a.effective_due_date) return 1;
         if (!b.effective_due_date) return -1;
@@ -535,18 +584,32 @@ const PaymentList = () => {
         return 0;
       }
       
-      // Vade tarihi için sıralama
+      // Vade tarihi için sıralama - 'Yaklaşanlar' filtresinde not_due_date kullan
       if (sortConfig.key === 'due_date') {
-        if (!a.effective_due_date && !b.effective_due_date) return 0;
-        if (!a.effective_due_date) return sortConfig.direction === 'ascending' ? 1 : -1;
-        if (!b.effective_due_date) return sortConfig.direction === 'ascending' ? -1 : 1;
-        
-        const aDate = new Date(a.effective_due_date);
-        const bDate = new Date(b.effective_due_date);
-        
-        return sortConfig.direction === 'ascending' 
-          ? aDate - bDate 
-          : bDate - aDate;
+        if (filterType === 'upcoming') {
+          if (!a.not_due_date && !b.not_due_date) return 0;
+          if (!a.not_due_date) return sortConfig.direction === 'ascending' ? 1 : -1;
+          if (!b.not_due_date) return sortConfig.direction === 'ascending' ? -1 : 1;
+          
+          const aDate = new Date(a.not_due_date);
+          const bDate = new Date(b.not_due_date);
+          
+          return sortConfig.direction === 'ascending' 
+            ? aDate - bDate 
+            : bDate - aDate;
+        } else {
+          // Normal effective_due_date sıralaması
+          if (!a.effective_due_date && !b.effective_due_date) return 0;
+          if (!a.effective_due_date) return sortConfig.direction === 'ascending' ? 1 : -1;
+          if (!b.effective_due_date) return sortConfig.direction === 'ascending' ? -1 : 1;
+          
+          const aDate = new Date(a.effective_due_date);
+          const bDate = new Date(b.effective_due_date);
+          
+          return sortConfig.direction === 'ascending' 
+            ? aDate - bDate 
+            : bDate - aDate;
+        }
       }
       
       // Diğer sayısal alanlar için sıralama
@@ -620,8 +683,49 @@ const PaymentList = () => {
     }
   }, [sortConfig]);
 
-  // Gösterilecek status badge'i belirle
+  // Gösterilecek status badge'i belirle - DÜZELTME YAPILDI
   const getStatusBadge = (balance) => {
+    // 'Yaklaşanlar' filtresinde sadece not_due_date ve not_due_balance değerlerini kullan
+    if (filterType === 'upcoming') {
+      // Vadesi geçmemiş bakiye tarihi mutlaka olmalı
+      if (!balance.not_due_date) {
+        return { text: 'Vade Tarihi Yok', class: 'badge-danger' };
+      }
+      
+      const notDueDate = new Date(balance.not_due_date);
+      notDueDate.setHours(0, 0, 0, 0);
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Tarihler arasındaki farkı hesapla (gün olarak)
+      const diffMs = notDueDate.getTime() -today.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      console.log(`[PaymentList-Upcoming] Vade durumu: Müşteri=${balance.customers?.name}, Vade=${notDueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
+      
+      if (diffDays < 0) {
+        // Vade tarihi geçmiş (yaklaşan vadelerde gösterilmemeli)
+        return { 
+          text: `${Math.abs(diffDays)} gün gecikmiş`, 
+          class: 'badge-danger' 
+        };
+      } else if (diffDays === 0) {
+        // Bugün
+        return { text: 'Bugün', class: 'badge-warning' };
+      } else if (diffDays === 1) {
+        // Yarın
+        return { text: 'Yarın', class: 'badge-warning' };
+      } else if (diffDays <= 3) {
+        // Yakın gelecek (2-3 gün)
+        return { text: `${diffDays} gün kaldı`, class: 'badge-warning' };
+      } else {
+        // Uzak gelecek
+        return { text: `${diffDays} gün kaldı`, class: 'badge-info' };
+      }
+    }
+
+    // Normal durum (Tümü veya Vadesi Geçmiş filtresi)
     if (!balance.effective_due_date) {
       // Vade tarihi belirsiz olan kayıtları vadesi geçmiş olarak işaretle
       return { text: 'Vadesi Geçmiş (Belirsiz)', class: 'badge-danger' };
@@ -635,12 +739,11 @@ const PaymentList = () => {
     today.setHours(0, 0, 0, 0);
     
     // Tarihler arasındaki farkı hesapla (gün olarak)
-    // Günü doğru hesaplamak için iki tarih arasındaki farkı 24 saat olarak hesapla
     const diffMs = dueDate.getTime() - today.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     
     // Sonucu logla
-    console.log(`Durum hesaplaması: Müşteri=${balance.customers?.name}, Vade=${dueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
+    console.log(`[PaymentList-Normal] Durum hesaplaması: Müşteri=${balance.customers?.name}, Vade=${dueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
     
     if (diffDays < 0) {
       // Vade tarihi geçmiş
@@ -996,9 +1099,11 @@ const PaymentList = () => {
                           </div>
                         </td>
                         <td>
-                          {balance.effective_due_date
-                            ? format(new Date(balance.effective_due_date), 'dd.MM.yyyy', { locale: tr })
-                            : '-'}
+                          {filterType === 'upcoming' && balance.not_due_date
+                            ? format(new Date(balance.not_due_date), 'dd.MM.yyyy', { locale: tr })
+                            : balance.effective_due_date
+                              ? format(new Date(balance.effective_due_date), 'dd.MM.yyyy', { locale: tr })
+                              : '-'}
                         </td>
                         <td style={{ color: balance.calculated_past_due > 0 ? '#e74c3c' : 'inherit' }}>
                           {formatCurrency(balance.calculated_past_due)}
