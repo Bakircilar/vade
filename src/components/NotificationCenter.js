@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { toast } from 'react-toastify';
+import { supabase } from '../services/supabase';
 import { 
   getUserNotifications, 
   markNotificationAsRead,
