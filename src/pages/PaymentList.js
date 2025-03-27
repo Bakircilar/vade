@@ -241,7 +241,10 @@ const PaymentList = () => {
   // Veri getirme fonksiyonu - hata düzeltildi
   const fetchData = async (force = false) => {
     // Eğer başlangıç yüklemesi yapıldıysa ve zorlanmıyorsa, tekrar yükleme
-    if (initialLoadDone && !force) return;
+    if (initialLoadDone && !force) {
+      console.log('Veri zaten yüklendi, tekrar yükleme yapılmıyor');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -255,6 +258,9 @@ const PaymentList = () => {
 
       // Kullanıcıya atanmış müşteri ID'lerini al
       const assignedIds = await getAssignedCustomerIds();
+      
+      console.log("Kullanıcı rolleri:", { isAdmin, isMuhasebe });
+      console.log("Atanmış müşteri ID'leri:", assignedIds);
 
       while (hasMoreData) {
         // Sayfa başlangıç ve bitiş indeksleri
@@ -273,11 +279,17 @@ const PaymentList = () => {
         
         // Erişim filtresi ekle - admin ve muhasebe dışındaki kullanıcılar için
         if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+          console.log("Normal kullanıcı için filtre uygulanıyor");
           query = query.in('customer_id', assignedIds);
         } else if (!isAdmin && !isMuhasebe) {
           // Hiç atanmış müşteri yoksa ve admin veya muhasebe değilse
+          console.log("Kullanıcıya atanmış müşteri yok veya erişim yetkisi yok");
           query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
+        } else {
+          console.log("Admin veya muhasebe kullanıcısı, tüm müşterilere erişim var");
         }
+        
+        console.log("Veri çekilecek sayfalar:", { page, from, to: from + pageSize - 1 });
         
         const { data: pageData, error: pageError } = await query;
         
@@ -288,8 +300,10 @@ const PaymentList = () => {
         
         // Eğer boş veri döndüyse veya pageSize'dan az veri döndüyse, tüm verileri çektik demektir
         if (!pageData || pageData.length === 0) {
+          console.log(`Sayfa ${page+1}: Veri yok veya bitti`);
           hasMoreData = false;
         } else {
+          console.log(`Sayfa ${page+1}: ${pageData.length} kayıt alındı`);
           // Verileri ana diziye ekle
           allData = [...allData, ...pageData];
           
@@ -306,6 +320,8 @@ const PaymentList = () => {
       // Tüm kayıtları sakla (Excel dışa aktarımı için)
       const data = allData;
       setAllRecords(data);
+      
+      console.log(`Toplam ${data.length} veri yüklendi`);
       
       if (!data || data.length === 0) {
         setBalances([]);
@@ -362,23 +378,26 @@ const PaymentList = () => {
           let isPastDue = false;  // Vadesi geçmiş mi
           let isUpcoming = false; // Yaklaşan vade mi
           let effectiveDueDate = null; // Gösterilecek vade tarihi
-          
+
           // 1. Vadesi geçen bakiye tarihi kontrolü
           if (balance.past_due_date) {
             const pastDueDate = new Date(balance.past_due_date);
             pastDueDate.setHours(0, 0, 0, 0);
             
+            // Vadesi geçmiş kontrolü
             if (pastDueDate < today) {
               // Vadesi geçmiş
               isPastDue = true;
               effectiveDueDate = pastDueDate;
+              console.log(`Vadesi geçmiş: ${balance.customers?.name}, Vade tarihi: ${pastDueDate.toISOString()}`);
             } else if (pastDueDate >= today && pastDueDate <= futureDate) {
               // Yaklaşan vadeli
               isUpcoming = true;
               effectiveDueDate = pastDueDate;
+              console.log(`Yaklaşan vade: ${balance.customers?.name}, Vade tarihi: ${pastDueDate.toISOString()}`);
             }
           }
-          
+
           // 2. Vadesi geçmeyen bakiye tarihi kontrolü 
           if (balance.not_due_date) {
             const notDueDate = new Date(balance.not_due_date);
@@ -391,10 +410,11 @@ const PaymentList = () => {
               // Eğer önceki tarihten daha yakınsa bu tarihi kullan
               if (!effectiveDueDate || notDueDate < effectiveDueDate) {
                 effectiveDueDate = notDueDate;
+                console.log(`Yaklaşan vade (not_due): ${balance.customers?.name}, Vade tarihi: ${notDueDate.toISOString()}`);
               }
             }
           }
-          
+
           // 3. Eski due_date alanı kontrolü
           if (balance.due_date && !effectiveDueDate) {
             const dueDate = new Date(balance.due_date);
@@ -403,9 +423,11 @@ const PaymentList = () => {
             if (dueDate < today) {
               isPastDue = true;
               effectiveDueDate = dueDate;
+              console.log(`Vadesi geçmiş (due_date): ${balance.customers?.name}, Vade tarihi: ${dueDate.toISOString()}`);
             } else if (dueDate >= today && dueDate <= futureDate) {
               isUpcoming = true;
               effectiveDueDate = dueDate;
+              console.log(`Yaklaşan vade (due_date): ${balance.customers?.name}, Vade tarihi: ${dueDate.toISOString()}`);
             }
           }
           
@@ -464,13 +486,14 @@ const PaymentList = () => {
       // Bakiyeleri ayarla
       setBalances(filteredBalances);
       
+      // İşlem sonunda initialLoadDone'ı true yapın
+      setInitialLoadDone(true);
     } catch (err) {
       console.error("Veri çekerken hata:", err);
       setError(err.message);
       toast.error("Veriler yüklenirken hata oluştu");
     } finally {
       setLoading(false);
-      setInitialLoadDone(true);
     }
   };
 
@@ -573,8 +596,22 @@ const PaymentList = () => {
 
   // İlk yükleme için ve filtre değişikliklerinde verileri getir
   useEffect(() => {
+    console.log('PaymentList - Filtre useEffect tetiklendi:', { filterType, dateRange, search: location.search });
     fetchData(true); // Yeni filtreyi uygulamak için force true
   }, [filterType, dateRange, location.search]);
+
+  // Komponent ilk yüklendiğinde de veri getir
+  useEffect(() => {
+    console.log('PaymentList - İlk yükleme useEffect tetiklendi');
+    
+    // Bileşen ilk yüklendiğinde zorla veri getir
+    const timer = setTimeout(() => {
+      console.log('PaymentList - İlk yükleme için fetchData çağrılıyor');
+      fetchData(true);
+    }, 100);
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   // Sıralama değiştiğinde verileri yeniden sırala
   useEffect(() => {
@@ -591,29 +628,39 @@ const PaymentList = () => {
     }
     
     const dueDate = new Date(balance.effective_due_date);
+    // Saat bilgilerini sıfırlayarak iki tarihi karşılaştırma
+    dueDate.setHours(0, 0, 0, 0);
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
     // Tarihler arasındaki farkı hesapla (gün olarak)
-    const diffTime = dueDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Günü doğru hesaplamak için iki tarih arasındaki farkı 24 saat olarak hesapla
+    const diffMs = dueDate.getTime() - today.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     
-    if (balance.is_past_due) {
+    // Sonucu logla
+    console.log(`Durum hesaplaması: Müşteri=${balance.customers?.name}, Vade=${dueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
+    
+    if (diffDays < 0) {
+      // Vade tarihi geçmiş
       return { 
         text: `${Math.abs(diffDays)} gün gecikmiş`, 
         class: 'badge-danger' 
       };
-    } else if (balance.is_upcoming) {
-      if (diffDays === 0) {
-        return { text: 'Bugün', class: 'badge-warning' };
-      } else if (diffDays <= 2) {
-        return { text: `${diffDays} gün kaldı`, class: 'badge-warning' };
-      } else {
-        return { text: `${diffDays} gün kaldı`, class: 'badge-info' };
-      }
+    } else if (diffDays === 0) {
+      // Bugün
+      return { text: 'Bugün', class: 'badge-warning' };
+    } else if (diffDays === 1) {
+      // Yarın
+      return { text: 'Yarın', class: 'badge-warning' };
+    } else if (diffDays <= 3) {
+      // Yakın gelecek (2-3 gün)
+      return { text: `${diffDays} gün kaldı`, class: 'badge-warning' };
+    } else {
+      // Uzak gelecek
+      return { text: `${diffDays} gün kaldı`, class: 'badge-info' };
     }
-    
-    return { text: 'Normal', class: 'badge-info' };
   };
 
   // Para birimi formatla

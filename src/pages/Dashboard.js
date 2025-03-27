@@ -146,8 +146,18 @@ const Dashboard = () => {
                   const dueDate = new Date(balance.not_due_date);
                   dueDate.setHours(0, 0, 0, 0);
                   
-                  // Tarih kontrolü
-                  const isInFuturePeriod = dueDate >= today && dueDate <= fifteenDaysLater;
+                  // Tarih kontrolü - daha açık ve karşılaştırılabilir
+                  const todayWithoutTime = new Date();
+                  todayWithoutTime.setHours(0, 0, 0, 0);
+                  
+                  const fifteenDaysLaterWithoutTime = new Date(todayWithoutTime);
+                  fifteenDaysLaterWithoutTime.setDate(todayWithoutTime.getDate() + 15);
+                  
+                  // Tarih kontrolünü logla
+                  console.log(`Vadesi yaklaşan kontrolü - Müşteri: ${balance.customers?.name}, Vade tarihi: ${dueDate.toISOString()}`);
+                  console.log(`Tarih aralığı: ${todayWithoutTime.toISOString()} ile ${fifteenDaysLaterWithoutTime.toISOString()} arası`);
+                  
+                  const isInFuturePeriod = dueDate >= todayWithoutTime && dueDate <= fifteenDaysLaterWithoutTime;
                   
                   if (isInFuturePeriod) {
                     upcomingCount++;
@@ -202,10 +212,29 @@ const Dashboard = () => {
   // Kalan gün hesapla
   const calculateDaysLeft = (dueDateStr) => {
     if (!dueDateStr) return null;
+    
     try {
+      // Vade tarihini doğru formatta çöz
       const dueDate = new Date(dueDateStr);
-      return differenceInDays(dueDate, new Date());
+      // Saat bilgilerini sıfırla
+      dueDate.setHours(0, 0, 0, 0);
+      
+      // Bugünün tarihini al ve saat bilgilerini sıfırla
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      // Tarih farkını hesapla (milisaniye cinsinden)
+      const diffMs = dueDate - today;
+      
+      // Milisaniyeleri gün olarak çevir
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      // Debug: Tarih bilgilerini konsola yaz
+      console.log(`Kalan gün hesaplaması: Vade=${dueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
+      
+      return diffDays;
     } catch (err) {
+      console.error("Tarih hesaplama hatası:", err, dueDateStr);
       return null;
     }
   };
@@ -345,7 +374,10 @@ const Dashboard = () => {
                     </td>
                     <td>
                       <span className={`badge ${statusClass}`}>
-                        {daysLeft === 0 ? 'Bugün' : `${daysLeft} gün`}
+                        {daysLeft === 0 ? 'Bugün' : 
+                         daysLeft === 1 ? 'Yarın' : 
+                         daysLeft > 0 ? `${daysLeft} gün kaldı` : 
+                         `${Math.abs(daysLeft)} gün gecikmiş`}
                       </span>
                     </td>
                     <td>

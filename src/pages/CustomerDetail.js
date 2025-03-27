@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, Link, Navigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -15,28 +15,74 @@ const CustomerDetail = () => {
   const [accessDenied, setAccessDenied] = useState(false);
   
   // User access control
-  const { checkCustomerAccess } = useUserAccess();
+  const { user, isAdmin, isMuhasebe, loading: accessLoading } = useUserAccess();
 
   const fetchCustomerData = useCallback(async () => {
+    if (accessLoading) return; // Erişim kontrolü yüklenmeden devam etme
+    
     setLoading(true);
     try {
-      // First check if user has access to this customer
-      const hasAccess = await checkCustomerAccess(id);
-      if (!hasAccess) {
-        setAccessDenied(true);
-        return;
-      }
+      console.log('Müşteri detayı yükleniyor, ID:', id);
+      console.log('Kullanıcı rolleri:', { isAdmin, isMuhasebe });
       
-      // Get customer info
+      // Önce müşteri bilgilerini getir
       const { data: customerData, error: customerError } = await supabase
         .from('customers')
         .select('*')
         .eq('id', id)
         .single();
       
-      if (customerError) throw customerError;
+      if (customerError) {
+        console.error("Müşteri bilgisi alınamadı:", customerError);
+        if (customerError.code === 'PGRST116') {
+          toast.error('Müşteri bulunamadı');
+          return; // Müşteri yoksa işlemi sonlandır
+        }
+        throw customerError;
+      }
+      
+      // Müşteri varsa, erişim kontrolü yap - Admin ve muhasebe kullanıcılarına hemen erişim ver
+      console.log('Müşteri bulundu:', customerData);
+      console.log('isAdmin:', isAdmin, 'isMuhasebe:', isMuhasebe);
+      
+      // Admin veya muhasebe değilse erişim kontrolü yap
+      if (!isAdmin && !isMuhasebe) {
+        if (!user) {
+          setAccessDenied(true);
+          return;
+        }
+        
+        console.log('Kullanıcı erişimi kontrol ediliyor...');
+        
+        // Bu kullanıcının bu müşteriye erişimi var mı kontrol et
+        const { data, error } = await supabase
+          .from('user_customer_assignments')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('customer_id', id)
+          .single();
+          
+        if (error) {
+          if (error.code !== 'PGRST116') {
+            console.error("Erişim kontrolü hatası:", error);
+          }
+          console.log('Erişim reddedildi');
+          setAccessDenied(true);
+          return;
+        }
+        
+        if (!data) {
+          console.log('Erişim reddedildi - müşteri ataması yok');
+          setAccessDenied(true);
+          return;
+        }
+        
+        console.log('Erişim onaylandı');
+      } else {
+        console.log('Admin veya muhasebe kullanıcısı, tüm müşterilere erişim var');
+      }
 
-      // Get customer balance
+      // Erişim varsa müşteri bakiyesini getir
       const { data: balanceData, error: balanceError } = await supabase
         .from('customer_balances')
         .select('*')
@@ -55,21 +101,32 @@ const CustomerDetail = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, checkCustomerAccess]);
+  }, [id, user, isAdmin, isMuhasebe, accessLoading]);
 
   useEffect(() => {
-    if (id) {
+    if (id && !accessLoading) {
       fetchCustomerData();
     }
-  }, [id, fetchCustomerData]);
+  }, [id, fetchCustomerData, accessLoading]);
 
-  if (accessDenied) {
-    toast.error('Bu müşteriye erişim izniniz bulunmuyor');
-    return <Navigate to="/customers" />;
+  if (loading || accessLoading) {
+    return <div style={{ textAlign: 'center', padding: '40px' }}>Yükleniyor...</div>;
   }
 
-  if (loading) {
-    return <div style={{ textAlign: 'center', padding: '40px' }}>Yükleniyor...</div>;
+  if (accessDenied) {
+    return (
+      <div style={{ textAlign: 'center', padding: '40px' }}>
+        <div className="card" style={{ padding: '20px', marginBottom: '20px', backgroundColor: '#fff3cd', color: '#856404' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '10px' }}>
+            Erişim Reddedildi
+          </h2>
+          <p>Bu müşteriye erişim izniniz bulunmuyor. Sadece size atanan müşterileri görüntüleyebilirsiniz.</p>
+          <Link to="/customers" className="btn btn-warning" style={{ marginTop: '15px' }}>
+            Müşteri Listesine Dön
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (!customer) {

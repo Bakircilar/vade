@@ -101,32 +101,140 @@ const ImportExcel = () => {
     }
   };
 
-  const readExcelFile = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = new Uint8Array(e.target.result);
-          const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          
-          // Daha kapsamlı ayarlarla JSON dönüşümü
-          const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
-            header: 1,
-            raw: false,     // Tüm değerleri text olarak al
-            dateNF: 'yyyy-mm-dd',  // Tarihler için format
-            defval: ''      // Boş hücreler için varsayılan
-          });
-          
-          resolve(jsonData);
-        } catch (error) {
-          reject(new Error('Excel dosyası okunamadı: ' + error.message));
+  // Excel tarihini işleme yardımcı fonksiyonu - Kapsamlı düzeltmeler
+const parseDateValue = (value) => {
+  if (!value) return null;
+  
+  try {
+    console.log("Tarih dönüştürme - Orijinal değer:", value, "Türü:", typeof value);
+    
+    // Excel tarihi numarik mi kontrol et (1900 tarih sistemi)
+    if (typeof value === 'number') {
+      // Excel tarihi işleme - manuel olarak düzeltme uygula
+      // 25569: 1 Ocak 1970 - 1 Ocak 1900 arası gün farkı
+      
+      // ÖZEL DÜZELTME: Tarih başına bir gün ekle (+1)
+      // Bu, Excel'den yükleme sırasında oluşan 1 günlük kaymayı telafi eder
+      const excelDate = value + 1;
+      
+      // JavaScript tarihi oluştur
+      const msDate = (excelDate - 25569) * 86400 * 1000;
+      const date = new Date(msDate);
+      
+      // Saat dilimi farkını düzelt
+      const utcDate = new Date(date.getTime() + date.getTimezoneOffset() * 60000);
+      
+      console.log("Tarih dönüştürme - Sayısal değer:", value, "→ Düzeltilmiş Tarih:", utcDate.toISOString());
+      return utcDate;
+    }
+    
+    // Tarih string formatında ise
+    if (typeof value === 'string') {
+      // Türkçe format (gg.aa.yyyy) kontrolü
+      const dateParts = value.split('.');
+      if (dateParts.length === 3) {
+        // Direkt olarak Date nesnesini oluştur
+        const day = parseInt(dateParts[0], 10);
+        const month = parseInt(dateParts[1], 10) - 1; // Aylar 0-11 arasında
+        const year = parseInt(dateParts[2], 10);
+        
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          // Kesin tarih manipülasyonu
+          const date = new Date(Date.UTC(year, month, day));
+          console.log("Tarih dönüştürme - Türkçe format:", value, "→", date.toISOString());
+          return date;
         }
-      };
-      reader.onerror = () => reject(new Error('Dosya okunamadı'));
-      reader.readAsArrayBuffer(file);
-    });
-  };
+      }
+      
+      // ISO format (yyyy-mm-dd) kontrolü
+      if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [year, month, day] = value.split('-').map(Number);
+        // Kesin tarih oluşturma, UTC kullanarak
+        const date = new Date(Date.UTC(year, month - 1, day));
+        console.log("Tarih dönüştürme - ISO format:", value, "→", date.toISOString());
+        return date;
+      }
+      
+      // Excel formatlı tarih string değeri (örn: "44197" string olarak)
+      if (/^\d+$/.test(value)) {
+        // String'i sayıya çevir ve manuel Excel tarihi düzeltmesini uygula
+        const excelDate = Number(value) + 1; // +1 düzeltme uygula
+        const msDate = (excelDate - 25569) * 86400 * 1000;
+        const date = new Date(msDate);
+        console.log("Tarih dönüştürme - Sayısal string:", value, "→", date.toISOString());
+        return date;
+      }
+      
+      // Genel date parsing denemesi
+      const date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        console.log("Tarih dönüştürme - Genel string:", value, "→", date.toISOString());
+        return date;
+      }
+    }
+    
+    // Date nesnesi kontrolü
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      // Date nesnesini olduğu gibi kullan ama 1 gün ekle
+      const correctedDate = new Date(value);
+      correctedDate.setDate(correctedDate.getDate() + 1);
+      console.log("Tarih dönüştürme - Date nesnesi:", value, "→", correctedDate.toISOString());
+      return correctedDate;
+    }
+    
+    // Hiçbir formatta işlenemiyorsa
+    console.warn("Tarih dönüştürme - Bilinmeyen format:", value);
+    return null;
+    
+  } catch (error) {
+    console.error("Tarih ayrıştırma hatası:", error, "Değer:", value);
+    return null;
+  }
+};
+
+// Excel dosyası okuma fonksiyonu - Geliştirilmiş
+const readExcelFile = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        
+        // Excel'i okurken tarih formatlarına özel önem ver
+        const workbook = XLSX.read(data, { 
+          type: 'array',
+          cellDates: true,       // Tarihleri Date nesnesi olarak al
+          dateNF: 'dd.mm.yyyy',  // Türkiye tarih formatı
+          cellNF: true,          // Sayı formatını koru
+          cellStyles: true,      // Hücre stillerini oku (tarih stili tespiti için)
+          WTF: true              // Hata toleransını artır
+        });
+        
+        // İlk çalışma sayfasını al
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        
+        // Daha kapsamlı ayarlarla JSON dönüşümü
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+          header: 1,              // Başlık satırı belirt
+          raw: false,             // Değerleri işlenmemiş olarak al
+          dateNF: 'dd.mm.yyyy',  // Tarihler için Türkiye formatı
+          defval: ''              // Boş hücreler için varsayılan
+        });
+        
+        console.log("Excel okuma başlıkları:", jsonData[0]);
+        console.log("Excel okuma ilk satır:", jsonData[1]);
+        
+        resolve(jsonData);
+        
+      } catch (error) {
+        console.error("Excel okuma hatası:", error);
+        reject(new Error('Excel dosyası okunamadı: ' + error.message));
+      }
+    };
+    reader.onerror = () => reject(new Error('Dosya okunamadı'));
+    reader.readAsArrayBuffer(file);
+  });
+};
 
   // Geliştirilmiş Excel değerini sayıya çevirme fonksiyonu
   const parseNumericValue = (value) => {
@@ -158,179 +266,198 @@ const ImportExcel = () => {
   };
   
   // Excel tarihini işleme yardımcı fonksiyonu
-  const parseDateValue = (value) => {
-    if (!value) return null;
+const parseDateValue = (value) => {
+  if (!value) return null;
+  
+  try {
+    // Debug: Orijinal tarih değerini logla
+    console.log("Tarih dönüştürme - Orijinal değer:", value, "Türü:", typeof value);
     
-    try {
-      // Excel tarihi numarik mi kontrol et (1900 tarih sistemi)
-      if (typeof value === 'number') {
-        // Excel tarihi (1900 sistemi) - 1 Ocak 1900'den itibaren gün sayısı
-        return new Date(Math.round((value - 25569) * 86400 * 1000));
+    // Excel tarihi numarik mi kontrol et (1900 tarih sistemi)
+    if (typeof value === 'number') {
+      // Excel tarihi (1900 sistemi) - 1 Ocak 1900'den itibaren gün sayısı
+      // NOT: Excel ve JavaScript'in tarih hesaplamasındaki farkları düzelt
+      // JavaScript Date: milisaniye cinsinden 1 Ocak 1970'den itibaren
+      // Excel: 1 Ocak 1900'den itibaren gün sayısı
+      // Excel 60. günü 29 Şubat 1900 kabul eder ama bu tarih gerçekte yoktur
+      // Bu yüzden 1 Mart 1900'den sonraki tarihler için 1 gün çıkarmak gerekir
+      
+      let excelDate = value;
+      
+      // Tarih Lotus 1-2-3 bug düzeltmesi (1900 yılı için yanlış artık yıl hesabı)
+      if (excelDate > 59) {
+        excelDate -= 1; // 29 Şubat 1900 tarihini düzelt (gerçekte olmayan tarih)
       }
       
-      // Tarih string formatında
-      if (typeof value === 'string') {
-        // Türkçe format (gg.aa.yyyy) kontrolü
-        const dateParts = value.split('.');
-        if (dateParts.length === 3) {
-          // Ay değerini 0-11 aralığına çevir (JavaScript Date)
-          const month = parseInt(dateParts[1], 10) - 1;
-          const day = parseInt(dateParts[0], 10);
-          const year = parseInt(dateParts[2], 10);
-          
-          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
-            return new Date(year, month, day);
-          }
-        }
-        
-        // ISO format denemesi (yyyy-mm-dd)
-        const isoDate = new Date(value);
-        if (!isNaN(isoDate.getTime())) {
-          return isoDate;
-        }
-      }
+      // JavaScript tarihi: (Excel günü - 25569) * 86400000
+      // 25569: 1 Ocak 1970 - 1 Ocak 1900 arası gün farkı
+      const jsDate = new Date((excelDate - 25569) * 86400000);
       
-      // Tarih objesi kontrolü
-      if (value instanceof Date && !isNaN(value.getTime())) {
-        return value;
-      }
-    } catch (error) {
-      console.error("Tarih ayrıştırma hatası:", error, "Değer:", value);
+      // UTC zaman dilimi sorununu düzelt - yerel saat dilimine çevir
+      const utcDate = new Date(jsDate.getTime() + jsDate.getTimezoneOffset() * 60000);
+      
+      console.log("Tarih dönüştürme - Hesaplanan tarih:", utcDate.toISOString());
+      return utcDate;
     }
     
-    return null;
-  };
-
-  const processExcelData = (data) => {
-    const headers = data[0];
-    const customers = {};
+    // Tarih string formatında
+    if (typeof value === 'string') {
+      // Türkçe format (gg.aa.yyyy) kontrolü
+      const dateParts = value.split('.');
+      if (dateParts.length === 3) {
+        // Ay değerini 0-11 aralığına çevir (JavaScript Date)
+        const month = parseInt(dateParts[1], 10) - 1;
+        const day = parseInt(dateParts[0], 10);
+        const year = parseInt(dateParts[2], 10);
+        
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          const date = new Date(year, month, day);
+          console.log("Tarih dönüştürme - Türkçe format:", date.toISOString());
+          return date;
+        }
+      }
+      
+      // ISO format denemesi (yyyy-mm-dd)
+      const isoDate = new Date(value);
+      if (!isNaN(isoDate.getTime())) {
+        console.log("Tarih dönüştürme - ISO format:", isoDate.toISOString());
+        return isoDate;
+      }
+    }
     
-    // Kolon indekslerini bul
-    const findColumnIndex = (name) => {
-      // Daha esnek sütun başlığı eşleştirme
-      return headers.findIndex(header => {
-        if (!header) return false;
-        const headerStr = header.toString().toLowerCase().trim();
-        const searchStr = name.toLowerCase().trim();
-        return headerStr.includes(searchStr);
-      });
+    // Tarih objesi kontrolü
+    if (value instanceof Date && !isNaN(value.getTime())) {
+      console.log("Tarih dönüştürme - Date nesnesi:", value.toISOString());
+      return value;
+    }
+  } catch (error) {
+    console.error("Tarih ayrıştırma hatası:", error, "Değer:", value);
+  }
+  
+  return null;
+};
+
+  // Excel verilerini işleme - düzeltilmiş
+const processExcelData = (data) => {
+  const headers = data[0];
+  const customers = {};
+  
+  // Kolon indekslerini bul
+  const findColumnIndex = (name) => {
+    // Daha esnek sütun başlığı eşleştirme
+    return headers.findIndex(header => {
+      if (!header) return false;
+      const headerStr = header.toString().toLowerCase().trim();
+      const searchStr = name.toLowerCase().trim();
+      return headerStr.includes(searchStr);
+    });
+  };
+  
+  // Sütun indekslerini bul
+  const codeIndex = findColumnIndex('cari hesap kodu');
+  const nameIndex = findColumnIndex('cari hesap adı');
+  const sectorIndex = findColumnIndex('sektör kodu');
+  const groupIndex = findColumnIndex('grup kodu');
+  const regionIndex = findColumnIndex('bölge kodu');
+  const paymentTermIndex = findColumnIndex('cari ödeme vadesi');
+  const pastDueBalanceIndex = findColumnIndex('vadesi geçen bakiye');
+  const pastDueDateIndex = findColumnIndex('vadesi geçen bakiye vadesi');
+  const notDueBalanceIndex = findColumnIndex('vadesi geçmemiş bakiye');
+  const notDueDateIndex = findColumnIndex('vadesi geçmemiş bakiye vadesi'); 
+  const valorIndex = findColumnIndex('valör');
+  const totalBalanceIndex = findColumnIndex('toplam bakiye');
+  const refDateIndex = findColumnIndex('bakiyeye konu ilk evrak');
+  
+  // Debug için indeksleri yazdır
+  console.log("Bulunan sütun indeksleri:", {
+    codeIndex,
+    nameIndex,
+    pastDueBalanceIndex,
+    pastDueDateIndex,
+    notDueDateIndex,
+    totalBalanceIndex
+  });
+  
+  if (codeIndex === -1 || nameIndex === -1) {
+    throw new Error('Gerekli sütunlar bulunamadı. Excel formatınızı kontrol edin.');
+  }
+  
+  // Veri satırlarını işle (başlık satırını atla)
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    
+    // Boş satırları atla
+    if (!row[codeIndex]) continue;
+    
+    const customerCode = row[codeIndex].toString().trim();
+    
+    // Aynı müşteri kodunu tekrar işleme
+    if (customers[customerCode]) {
+      console.warn(`Müşteri kodu '${customerCode}' birden fazla satırda bulundu. Sadece ilk satır işlenecek.`);
+      continue;
+    }
+    
+    // TARİH ALANI - Vadesi geçmiş bakiye vadesi - DÜZELTME
+    let pastDueDate = null;
+    if (pastDueDateIndex !== -1 && row[pastDueDateIndex]) {
+      pastDueDate = parseDateValue(row[pastDueDateIndex]);
+      console.log(`Müşteri ${row[nameIndex]} - Vadesi geçmiş vade tarihi - Orijinal:`, row[pastDueDateIndex], "Dönüştürülmüş:", pastDueDate);
+    }
+    
+    // TARİH ALANI - Vadesi geçmemiş bakiye vadesi - DÜZELTME
+    let notDueDate = null;
+    if (notDueDateIndex !== -1 && row[notDueDateIndex]) {
+      notDueDate = parseDateValue(row[notDueDateIndex]);
+      console.log(`Müşteri ${row[nameIndex]} - Vadesi geçmemiş vade tarihi - Orijinal:`, row[notDueDateIndex], "Dönüştürülmüş:", notDueDate);
+    }
+    
+    // TARİH ALANI - Referans tarihi - DÜZELTME
+    let refDate = null;
+    if (refDateIndex !== -1 && row[refDateIndex]) {
+      refDate = parseDateValue(row[refDateIndex]);
+      console.log(`Müşteri ${row[nameIndex]} - Referans tarihi - Orijinal:`, row[refDateIndex], "Dönüştürülmüş:", refDate);
+    }
+    
+    // Sektör kodunu al
+    const sectorCode = sectorIndex !== -1 && row[sectorIndex] ? row[sectorIndex].toString().trim() : null;
+    
+    // Bakiye değerlerini sayıya çevir
+    const pastDueBalance = pastDueBalanceIndex !== -1 ? parseNumericValue(row[pastDueBalanceIndex]) : 0;
+    const notDueBalance = notDueBalanceIndex !== -1 ? parseNumericValue(row[notDueBalanceIndex]) : 0;
+    const totalBalance = totalBalanceIndex !== -1 ? parseNumericValue(row[totalBalanceIndex]) : 0;
+    const valor = valorIndex !== -1 ? parseInt(parseNumericValue(row[valorIndex]) || 0) : 0;
+    
+    // Müşteri ve bakiye verisini oluştur
+    customers[customerCode] = {
+      customer: {
+        code: customerCode,
+        name: row[nameIndex] ? row[nameIndex].toString().trim() : '',
+        sector_code: sectorCode,
+        group_code: groupIndex !== -1 && row[groupIndex] ? row[groupIndex].toString().trim() : null,
+        region_code: regionIndex !== -1 && row[regionIndex] ? row[regionIndex].toString().trim() : null,
+        payment_term: paymentTermIndex !== -1 && row[paymentTermIndex] ? row[paymentTermIndex].toString().trim() : null
+      },
+      balance: {
+        past_due_balance: pastDueBalance,
+        past_due_date: pastDueDate ? pastDueDate.toISOString().split('T')[0] : null,
+        not_due_balance: notDueBalance,
+        not_due_date: notDueDate ? notDueDate.toISOString().split('T')[0] : null,
+        valor: valor,
+        total_balance: totalBalance,
+        reference_date: refDate ? refDate.toISOString().split('T')[0] : null
+      }
     };
     
-    // Sütun indekslerini bul
-    const codeIndex = findColumnIndex('cari hesap kodu');
-    const nameIndex = findColumnIndex('cari hesap adı');
-    const sectorIndex = findColumnIndex('sektör kodu');
-    const groupIndex = findColumnIndex('grup kodu');
-    const regionIndex = findColumnIndex('bölge kodu');
-    const paymentTermIndex = findColumnIndex('cari ödeme vadesi');
-    const pastDueBalanceIndex = findColumnIndex('vadesi geçen bakiye');
-    const pastDueDateIndex = findColumnIndex('vadesi geçen bakiye vadesi');
-    const notDueBalanceIndex = findColumnIndex('vadesi geçmemiş bakiye');
-    const notDueDateIndex = findColumnIndex('vadesi geçmemiş bakiye vadesi'); // YENİ: Vadesi geçmemiş bakiye vadesi
-    const valorIndex = findColumnIndex('valör');
-    const totalBalanceIndex = findColumnIndex('toplam bakiye');
-    const refDateIndex = findColumnIndex('bakiyeye konu ilk evrak');
-    
-    // Debug için indeksleri yazdır
-    console.log("Bulunan indeksler:", {
-      codeIndex,
-      nameIndex,
-      pastDueBalanceIndex,
-      pastDueDateIndex,
-      notDueDateIndex, // YENİ: Vadesi geçmemiş bakiye vadesi indeksi
-      totalBalanceIndex
+    // Tarih alanlarını özel olarak logla
+    console.log(`Müşteri #${i} (${customerCode}):`, {
+      past_due_date: customers[customerCode].balance.past_due_date,
+      not_due_date: customers[customerCode].balance.not_due_date,
+      reference_date: customers[customerCode].balance.reference_date
     });
-    
-    if (codeIndex === -1 || nameIndex === -1) {
-      throw new Error('Gerekli sütunlar bulunamadı. Excel formatınızı kontrol edin.');
-    }
-    
-    // Veri satırlarını işle (başlık satırını atla)
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      
-      // Boş satırları atla
-      if (!row[codeIndex]) continue;
-      
-      const customerCode = row[codeIndex].toString().trim();
-      
-      // Aynı müşteri kodunu tekrar işleme
-      if (customers[customerCode]) {
-        console.warn(`Müşteri kodu '${customerCode}' birden fazla satırda bulundu. Sadece ilk satır işlenecek.`);
-        continue;
-      }
-      
-      // Vadesi geçmiş bakiye vadesi
-      let pastDueDate = null;
-      if (pastDueDateIndex !== -1 && row[pastDueDateIndex]) {
-        pastDueDate = parseDateValue(row[pastDueDateIndex]);
-      }
-      
-      // Vadesi geçmemiş bakiye vadesi - YENİ
-      let notDueDate = null;
-      if (notDueDateIndex !== -1 && row[notDueDateIndex]) {
-        notDueDate = parseDateValue(row[notDueDateIndex]);
-      }
-      
-      // Referans tarihini ayıkla
-      let refDate = null;
-      if (refDateIndex !== -1 && row[refDateIndex]) {
-        refDate = parseDateValue(row[refDateIndex]);
-      }
-      
-      // Sektör kodunu al
-      const sectorCode = sectorIndex !== -1 && row[sectorIndex] ? row[sectorIndex].toString().trim() : null;
-      
-      // Bakiye değerlerini sayıya çevir
-      // Excel'den gelen değerler olduğu gibi korunuyor (negatif/pozitif)
-      // Debug için orijinal değerleri loglayalım
-      console.log(`Satır ${i} Bakiye Değerleri:`, {
-        pastDue: row[pastDueBalanceIndex],
-        notDue: row[notDueBalanceIndex],
-        total: row[totalBalanceIndex]
-      });
-      
-      const pastDueBalance = pastDueBalanceIndex !== -1 ? parseNumericValue(row[pastDueBalanceIndex]) : 0;
-      const notDueBalance = notDueBalanceIndex !== -1 ? parseNumericValue(row[notDueBalanceIndex]) : 0;
-      const totalBalance = totalBalanceIndex !== -1 ? parseNumericValue(row[totalBalanceIndex]) : 0;
-      const valor = valorIndex !== -1 ? parseInt(parseNumericValue(row[valorIndex]) || 0) : 0;
-      
-      // Çevrilen değerleri loglayalım
-      console.log(`Satır ${i} Çevrilen Bakiyeler:`, {
-        pastDue: pastDueBalance,
-        notDue: notDueBalance,
-        total: totalBalance
-      });
-      
-      // Müşteri ve bakiye verisini oluştur
-      customers[customerCode] = {
-        customer: {
-          code: customerCode,
-          name: row[nameIndex] ? row[nameIndex].toString().trim() : '',
-          sector_code: sectorCode,
-          group_code: groupIndex !== -1 && row[groupIndex] ? row[groupIndex].toString().trim() : null,
-          region_code: regionIndex !== -1 && row[regionIndex] ? row[regionIndex].toString().trim() : null,
-          payment_term: paymentTermIndex !== -1 && row[paymentTermIndex] ? row[paymentTermIndex].toString().trim() : null
-        },
-        balance: {
-          past_due_balance: pastDueBalance,
-          past_due_date: pastDueDate ? pastDueDate.toISOString().split('T')[0] : null,
-          not_due_balance: notDueBalance,
-          not_due_date: notDueDate ? notDueDate.toISOString().split('T')[0] : null, // YENİ: Vadesi geçmemiş bakiye vadesi
-          valor: valor,
-          total_balance: totalBalance,
-          reference_date: refDate ? refDate.toISOString().split('T')[0] : null
-        }
-      };
-      
-      // İlk 3 müşteriyi örnek olarak logla
-      if (i <= 3) {
-        console.log(`Müşteri #${i}:`, customers[customerCode]);
-      }
-    }
-    
-    return customers;
-  };
+  }
+  
+  return customers;
+};
 
   const uploadToSupabaseBulk = async (customers) => {
     const keys = Object.keys(customers);
