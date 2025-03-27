@@ -1,6 +1,6 @@
 // src/services/notificationService.js
 import { supabase } from './supabase';
-
+import { supabase } from '../services/supabase';
 // Bildirim türleri
 export const NOTIFICATION_TYPES = {
   UPCOMING_PAYMENT: 'upcoming_payment',

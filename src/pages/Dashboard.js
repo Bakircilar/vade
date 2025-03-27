@@ -1,4 +1,4 @@
-// src/components/EnhancedDashboard.js
+// src/pages/Dashboard.js
 import React, { useState, useEffect } from 'react';
 import { 
   LineChart, Line, BarChart, Bar, PieChart, Pie, 
@@ -9,6 +9,8 @@ import { supabase } from '../services/supabase';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { useUserAccess } from '../helpers/userAccess';
+// Import LoginNotifications component
+import LoginNotifications from '../components/LoginNotifications';
 
 const EnhancedDashboard = () => {
   const [timelineData, setTimelineData] = useState([]);
@@ -298,6 +300,9 @@ const EnhancedDashboard = () => {
 
   return (
     <div className="enhanced-dashboard">
+      {/* LoginNotifications bileşeni eklendi */}
+      <LoginNotifications />
+      
       {/* Filtreler */}
       <div className="card" style={{ marginBottom: '20px', padding: '15px' }}>
         <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>
