@@ -3,10 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { format } from 'date-fns';
 import { tr } from 'date-fns/locale';
-<<<<<<< HEAD
 import EnhancedCustomerNotes from '../components/EnhancedCustomerNotes';
-=======
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
 import { toast } from 'react-toastify';
 import CustomerNotes from '../components/CustomerNotes';
 import { useUserAccess } from '../helpers/userAccess'; 
@@ -275,22 +272,13 @@ const CustomerDetail = () => {
       </div>
       
       {/* CustomerNotes component */}
-<<<<<<< HEAD
       <EnhancedCustomerNotes 
-  customerId={id} 
-  customerName={customer.name}
-  pastDueBalance={pastDueBalance}
-  notDueBalance={notDueBalance}
-  totalBalance={totalBalance}
-/>
-=======
-      <CustomerNotes 
         customerId={id} 
-        customerBalance={totalBalance}
+        customerName={customer.name}
         pastDueBalance={pastDueBalance}
         notDueBalance={notDueBalance}
+        totalBalance={totalBalance}
       />
->>>>>>> 909a0b70d5a303564c50b7778de3f2c0e01d5749
     </div>
   );
 };
