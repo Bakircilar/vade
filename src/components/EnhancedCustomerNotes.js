@@ -1,4 +1,4 @@
-// src/components/EnhancedCustomerNotes.js
+// src/components/EnhancedCustomerNotes.js - FIXED
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { toast } from 'react-toastify';
@@ -49,24 +49,86 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
     }
   }, [customerId]);
 
-  // Müşteri notlarını getir
+  // Müşteri notlarını getir - BUG FIX: Tamamen yeniden yazıldı, daha sağlam hata yönetimi
   const fetchNotes = async () => {
     setLoading(true);
     try {
+      console.log("Notlar yükleniyor, Müşteri ID:", customerId);
+      
+      // Hata işleme ve loglama daha ayrıntılı
       const { data, error } = await supabase
         .from('customer_notes')
-        .select(`
-          *,
-          profiles (full_name)
-        `)
+        .select('*')
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setNotes(data || []);
+      if (error) {
+        console.error("Not verisi çekilirken hata:", error);
+        throw error;
+      }
+      
+      if (!data || data.length === 0) {
+        console.log("Bu müşteri için not bulunamadı");
+        setNotes([]);
+        return;
+      }
+      
+      console.log(`${data.length} not bulundu`);
+      
+      // Kullanıcı bilgilerini toplu olarak getirmeye çalış
+      // Önce tüm user_id'leri topla
+      const userIds = data
+        .filter(note => note.user_id)
+        .map(note => note.user_id);
+        
+      // Benzersiz user_id'leri al
+      const uniqueUserIds = [...new Set(userIds)];
+      
+      // Kullanıcı ismi eşleştirme tablosu
+      const userNameMap = {};
+      
+      // Eğer kullanıcı ID'si varsa, toplu olarak kullanıcı bilgilerini getir
+      if (uniqueUserIds.length > 0) {
+        try {
+          const { data: userData, error: userError } = await supabase
+            .from('profiles')
+            .select('id, full_name')
+            .in('id', uniqueUserIds);
+            
+          if (!userError && userData) {
+            // İsim eşleştirme tablosu oluştur
+            userData.forEach(user => {
+              userNameMap[user.id] = user.full_name || 'Kullanıcı';
+            });
+            console.log("Kullanıcı isimleri yüklendi");
+          } else {
+            console.warn("Kullanıcı bilgileri çekilemedi:", userError);
+          }
+        } catch (e) {
+          console.warn("Kullanıcı bilgileri getirme hatası:", e);
+        }
+      }
+      
+      // Her nota kullanıcı ismi ekle
+      const notesWithUserNames = data.map(note => {
+        // Kullanıcı ID'si varsa ve ismi bulunabiliyorsa ekle, yoksa varsayılan isim kullan
+        const userName = note.user_id && userNameMap[note.user_id] 
+                        ? userNameMap[note.user_id] 
+                        : 'Kullanıcı';
+                        
+        return {
+          ...note,
+          user_name: userName
+        };
+      });
+      
+      setNotes(notesWithUserNames);
+      console.log("Notlar başarıyla yüklendi");
     } catch (error) {
       console.error('Notlar yüklenirken hata:', error);
-      toast.error('Notlar yüklenirken bir hata oluştu');
+      toast.error(`Notlar yüklenirken bir hata oluştu: ${error.message || error}`);
+      // Hata durumunda boş bir dizi ayarla
+      setNotes([]);
     } finally {
       setLoading(false);
     }
@@ -160,7 +222,7 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
     }
   };
 
-  // Not ekle
+  // Not ekle - BUG FİX: Tamamen yeniden yazıldı
   const handleSubmitNote = async (e) => {
     e.preventDefault();
     
@@ -171,70 +233,128 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
     
     setSubmitting(true);
     try {
-      // Kullanıcı ID'sini al
-      const { data: { user } } = await supabase.auth.getUser();
+      console.log("Not ekleme başlatıldı");
+      console.log("Bakiye değerleri:", { pastDueBalance, notDueBalance, totalBalance });
       
-      if (!user) {
-        toast.error('Oturum bilgisi alınamadı');
-        return;
+      // Bakiye değerlerini güvenli bir şekilde sayıya dönüştür
+      const safePastDueBalance = typeof pastDueBalance === 'number' ? pastDueBalance : 
+                               parseFloat(String(pastDueBalance || '0').replace(/[^\d.-]/g, '')) || 0;
+                               
+      const safeNotDueBalance = typeof notDueBalance === 'number' ? notDueBalance : 
+                              parseFloat(String(notDueBalance || '0').replace(/[^\d.-]/g, '')) || 0;
+                              
+      const safeTotalBalance = typeof totalBalance === 'number' ? totalBalance : 
+                             parseFloat(String(totalBalance || '0').replace(/[^\d.-]/g, '')) || 0;
+      
+      console.log("Düzeltilmiş bakiye değerleri:", { 
+        safePastDueBalance, 
+        safeNotDueBalance, 
+        safeTotalBalance 
+      });
+      
+      // Basit not verisi oluştur - en kritik ve gerekli alanları içerir
+      const simpleNoteData = {
+        customer_id: customerId,
+        note_content: newNote.trim(),
+        created_at: new Date().toISOString()
+      };
+      
+      // Opsiyonel alanları ekle - hataya neden olabilecek alanları kontrol et ve ekle
+      if (promiseDate) {
+        simpleNoteData.promise_date = promiseDate;
       }
       
-      // Notu oluştur
-      const noteData = {
-        customer_id: customerId,
-        user_id: user.id,
-        note_content: newNote.trim(),
-        promise_date: promiseDate || null,
-        tags: selectedTags.length > 0 ? selectedTags : null,
-        past_due_balance: pastDueBalance || 0,
-        not_due_balance: notDueBalance || 0,
-        total_balance: totalBalance || 0,
-        reminder_date: reminderType !== 'none' ? reminderDate : null,
-        reminder_note: reminderType !== 'none' ? reminderNote : null,
-        reminder_completed: false
-      };
+      if (selectedTags && selectedTags.length > 0) {
+        simpleNoteData.tags = selectedTags;
+      }
+      
+      // Bakiye değerlerini ekle
+      simpleNoteData.past_due_balance = safePastDueBalance;
+      simpleNoteData.not_due_balance = safeNotDueBalance;
+      simpleNoteData.total_balance = safeTotalBalance;
+      
+      // Hatırlatıcı bilgilerini ekle
+      if (reminderType !== 'none' && reminderDate) {
+        simpleNoteData.reminder_date = reminderDate;
+        if (reminderNote) {
+          simpleNoteData.reminder_note = reminderNote;
+        }
+        simpleNoteData.reminder_completed = false;
+      }
+      
+      // Güncel kullanıcı oturumunu al
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && user.id) {
+          simpleNoteData.user_id = user.id;
+          console.log("Kullanıcı ID'si eklendi:", user.id);
+        }
+      } catch (userError) {
+        console.warn("Kullanıcı bilgisi alınamadı, not anonim olarak eklenecek:", userError.message);
+      }
+      
+      console.log("Eklenecek not verisi:", simpleNoteData);
       
       if (editingNote) {
         // Mevcut notu güncelle
+        console.log(`Not güncelleniyor (ID: ${editingNote.id})...`);
         const { error } = await supabase
           .from('customer_notes')
-          .update(noteData)
+          .update(simpleNoteData)
           .eq('id', editingNote.id);
           
-        if (error) throw error;
+        if (error) {
+          console.error('Not güncelleme hatası:', error);
+          throw new Error(`Not güncellenirken hata: ${error.message}`);
+        }
         
         toast.success('Not başarıyla güncellendi');
       } else {
         // Yeni not ekle
-        const { error } = await supabase
+        console.log("Yeni not ekleniyor...");
+        const { data, error } = await supabase
           .from('customer_notes')
-          .insert([noteData]);
+          .insert([simpleNoteData])
+          .select();
           
-        if (error) throw error;
+        if (error) {
+          console.error('Not ekleme hatası:', error);
+          throw new Error(`Not eklenirken hata: ${error.message}`);
+        }
         
+        console.log("Not başarıyla eklendi:", data);
         toast.success('Not başarıyla eklendi');
       }
       
-      // Hatırlatıcı varsa, bildirim oluştur
-      if (reminderType !== 'none' && reminderDate) {
-        // Hatırlatıcı için bildirim oluştur
-        const notification = {
-          user_id: user.id,
-          customer_id: customerId,
-          type: 'note_reminder',
-          title: `${customerName} için hatırlatıcı`,
-          message: reminderNote || 'Müşteri görüşmesi hatırlatıcısı',
-          link: `/customers/${customerId}`,
-          is_read: false,
-          created_at: new Date(reminderDate).toISOString()
-        };
-        
-        const { error: notifError } = await supabase
-          .from('notifications')
-          .insert([notification]);
+      // Hatırlatıcı için bildirim oluşturma işlemi
+      // Eğer hatırlatıcı varsa bildirim oluştur
+      if (reminderType !== 'none' && reminderDate && simpleNoteData.user_id) {
+        try {
+          console.log("Hatırlatıcı bildirimi oluşturuluyor...");
+          const notification = {
+            user_id: simpleNoteData.user_id,
+            customer_id: customerId,
+            type: 'note_reminder',
+            title: `${customerName || 'Müşteri'} için hatırlatıcı`,
+            message: reminderNote || 'Müşteri görüşmesi hatırlatıcısı',
+            link: `/customers/${customerId}`,
+            is_read: false,
+            created_at: new Date().toISOString()
+          };
           
-        if (notifError) {
-          console.error('Hatırlatıcı bildirimi oluşturma hatası:', notifError);
+          const { error: notifError } = await supabase
+            .from('notifications')
+            .insert([notification]);
+            
+          if (notifError) {
+            console.warn('Hatırlatıcı bildirimi oluşturma hatası:', notifError);
+            // Bildirim hatası not eklemeyi etkilemez
+          } else {
+            console.log("Hatırlatıcı bildirimi eklendi");
+          }
+        } catch (notifError) {
+          console.warn('Bildirim oluşturma hatası:', notifError);
+          // Bildirim hatası not eklemeyi etkilemez
         }
       }
       
@@ -244,8 +364,8 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
       // Notları yenile
       fetchNotes();
     } catch (error) {
-      console.error('Not ekleme hatası:', error);
-      toast.error('Not eklenirken bir hata oluştu');
+      console.error('Not ekleme/güncelleme işlemi başarısız:', error);
+      toast.error(`Not eklenirken bir hata oluştu: ${error.message}`);
     } finally {
       setSubmitting(false);
       setEditingNote(null);
@@ -585,7 +705,7 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
               >
                 <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontWeight: 'bold', color: '#666' }}>
-                    {note.profiles?.full_name || 'Kullanıcı'} | {formatDate(note.created_at)}
+                    {note.user_name || 'Kullanıcı'} | {formatDate(note.created_at)}
                   </span>
                   
                   <div>

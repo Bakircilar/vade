@@ -1,4 +1,4 @@
-// src/components/CustomerTimeline.js
+// src/components/CustomerTimeline.js - FIXED
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { format, differenceInDays } from 'date-fns';
@@ -21,17 +21,42 @@ const CustomerTimeline = ({ customerId }) => {
     try {
       // Notlar, vadeler ve bakiye geçmişini getir
       
-      // 1. Müşteri notlarını getir
+      // 1. Müşteri notlarını getir - profiles tablosu ile join işlemi düzeltildi
       const { data: notesData, error: notesError } = await supabase
         .from('customer_notes')
-        .select(`
-          *,
-          profiles (full_name)
-        `)
+        .select('*')
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
         
       if (notesError) throw notesError;
+      
+      // Her not için kullanıcı adını ayrı bir sorgu ile alabilirsiniz (opsiyonel)
+      const notesWithUserNames = [];
+      for (const note of notesData || []) {
+        let userName = 'Kullanıcı';
+        
+        // Kullanıcı ID varsa profile bilgisini almaya çalış
+        if (note.user_id) {
+          try {
+            const { data: userData, error: userError } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('id', note.user_id)
+              .single();
+              
+            if (!userError && userData && userData.full_name) {
+              userName = userData.full_name;
+            }
+          } catch (e) {
+            console.log('Kullanıcı adı alınamadı:', e);
+          }
+        }
+        
+        notesWithUserNames.push({
+          ...note,
+          user_name: userName
+        });
+      }
       
       // 2. Müşteri bakiyelerini getir
       const { data: balance, error: balanceError } = await supabase
@@ -48,14 +73,14 @@ const CustomerTimeline = ({ customerId }) => {
       const timelineData = [];
       
       // Notları zaman çizelgesine ekle
-      if (notesData && notesData.length > 0) {
-        notesData.forEach(note => {
+      if (notesWithUserNames && notesWithUserNames.length > 0) {
+        notesWithUserNames.forEach(note => {
           timelineData.push({
             id: `note_${note.id}`,
             type: 'note',
             date: note.created_at,
             content: note.note_content,
-            user: note.profiles?.full_name || 'Kullanıcı',
+            user: note.user_name || 'Kullanıcı',
             promise_date: note.promise_date,
             tags: note.tags || [],
             reminder_date: note.reminder_date,
@@ -67,7 +92,7 @@ const CustomerTimeline = ({ customerId }) => {
       // Vadesi geçmiş bakiyeyi zaman çizelgesine ekle
       if (balance && balance.past_due_date) {
         timelineData.push({
-          id: `past_due_${balance.id}`,
+          id: `past_due_${balance.id || 'unknown'}`,
           type: 'past_due',
           date: balance.past_due_date,
           amount: parseFloat(balance.past_due_balance || 0),
@@ -78,7 +103,7 @@ const CustomerTimeline = ({ customerId }) => {
       // Vadesi geçmemiş bakiyeyi zaman çizelgesine ekle
       if (balance && balance.not_due_date) {
         timelineData.push({
-          id: `not_due_${balance.id}`,
+          id: `not_due_${balance.id || 'unknown'}`,
           type: 'not_due',
           date: balance.not_due_date,
           amount: parseFloat(balance.not_due_balance || 0),
