@@ -222,7 +222,7 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
     }
   };
 
-  // Not ekle - BUG FİX: Tamamen yeniden yazıldı
+  // Not ekle - BUG FİX: Düzeltilmiş
   const handleSubmitNote = async (e) => {
     e.preventDefault();
     
@@ -240,23 +240,13 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
       const safePastDueBalance = typeof pastDueBalance === 'number' ? pastDueBalance : 
                                parseFloat(String(pastDueBalance || '0').replace(/[^\d.-]/g, '')) || 0;
                                
-      const safeNotDueBalance = typeof notDueBalance === 'number' ? notDueBalance : 
-                              parseFloat(String(notDueBalance || '0').replace(/[^\d.-]/g, '')) || 0;
-                              
-      const safeTotalBalance = typeof totalBalance === 'number' ? totalBalance : 
-                             parseFloat(String(totalBalance || '0').replace(/[^\d.-]/g, '')) || 0;
-      
-      console.log("Düzeltilmiş bakiye değerleri:", { 
-        safePastDueBalance, 
-        safeNotDueBalance, 
-        safeTotalBalance 
-      });
-      
       // Basit not verisi oluştur - en kritik ve gerekli alanları içerir
       const simpleNoteData = {
         customer_id: customerId,
         note_content: newNote.trim(),
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        // Burada sadece balance_at_time alanını kullanıyoruz, diğer alanlar yerine
+        balance_at_time: safePastDueBalance
       };
       
       // Opsiyonel alanları ekle - hataya neden olabilecek alanları kontrol et ve ekle
@@ -267,11 +257,6 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
       if (selectedTags && selectedTags.length > 0) {
         simpleNoteData.tags = selectedTags;
       }
-      
-      // Bakiye değerlerini ekle
-      simpleNoteData.past_due_balance = safePastDueBalance;
-      simpleNoteData.not_due_balance = safeNotDueBalance;
-      simpleNoteData.total_balance = safeTotalBalance;
       
       // Hatırlatıcı bilgilerini ekle
       if (reminderType !== 'none' && reminderDate) {
@@ -798,33 +783,19 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
                 
                 {/* Bakiye Bilgileri */}
                 <div style={{ marginTop: '10px' }}>
-                  <div style={{ 
-                    padding: '8px', 
-                    backgroundColor: '#f8fafc', 
-                    borderRadius: '4px',
-                    border: '1px solid #e2e8f0'
-                  }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#475569' }}>Vadesi Geçmiş:</div>
-                        <div style={{ fontWeight: 'bold' }}>
-                          {formatCurrency(note.past_due_balance)}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#475569' }}>Vadesi Geçmemiş:</div>
-                        <div style={{ fontWeight: 'bold' }}>
-                          {formatCurrency(note.not_due_balance)}
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '12px', color: '#475569' }}>Toplam Bakiye:</div>
-                        <div style={{ fontWeight: 'bold' }}>
-                          {formatCurrency(note.total_balance)}
-                        </div>
+                  {note.balance_at_time !== null && note.balance_at_time !== undefined && (
+                    <div style={{ 
+                      padding: '8px', 
+                      backgroundColor: '#f8fafc', 
+                      borderRadius: '4px',
+                      border: '1px solid #e2e8f0'
+                    }}>
+                      <div style={{ fontSize: '12px', color: '#475569' }}>Not Eklendiğindeki Bakiye:</div>
+                      <div style={{ fontWeight: 'bold' }}>
+                        {formatCurrency(note.balance_at_time)}
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             );
