@@ -544,136 +544,6 @@ const NotesReport = () => {
           
           <div className="card">
             <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
-                <span>{selectedSector} Sektörü Müşterileri</span>
-                <span>{sectorCustomers.length} müşteri bulundu</span>
-              </h3>
-              
-              {loading ? (
-                <div style={{ textAlign: 'center', padding: '20px' }}>Müşteriler yükleniyor...</div>
-              ) : sectorCustomers.length > 0 ? (
-                <div>
-                  {sectorCustomers.map(customer => (
-                    <div key={customer.id} className="card" style={{ marginBottom: '10px', padding: '15px' }}>
-                      <div 
-                        style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          alignItems: 'center',
-                          cursor: 'pointer' 
-                        }}
-                        onClick={() => toggleCustomerExpand(customer.id)}
-                      >
-                        <div>
-                          <div style={{ fontWeight: 'bold' }}>{customer.name}</div>
-                          <div style={{ fontSize: '12px', color: '#888' }}>{customer.code}</div>
-                        </div>
-                        
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span className="badge" style={{ 
-                            backgroundColor: customer.noteCount > 0 ? '#3498db' : '#ccc',
-                            color: 'white'
-                          }}>
-                            {customer.noteCount} Not
-                          </span>
-                          
-                          <button
-                            className="btn btn-primary"
-                            style={{ padding: '4px 8px', fontSize: '12px' }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              window.location.href = `/customers/${customer.id}`;
-                            }}
-                          >
-                            Detay
-                          </button>
-                          
-                          <span style={{ 
-                            fontSize: '18px', 
-                            transition: 'transform 0.3s',
-                            transform: expandedCustomers[customer.id] ? 'rotate(180deg)' : 'rotate(0)'
-                          }}>
-                            ▼
-                          </span>
-                        </div>
-                      </div>
-                      
-                      {/* Genişletilmiş içerik - Notlar */}
-                      {expandedCustomers[customer.id] && (
-                        <div style={{ marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '15px' }}>
-                          {customer.notes.length > 0 ? (
-                            <div>
-                              {customer.notes.map(note => (
-                                <div 
-                                  key={note.id} 
-                                  style={{ 
-                                    padding: '10px', 
-                                    borderLeft: '3px solid #3498db',
-                                    marginBottom: '10px',
-                                    backgroundColor: '#f9f9f9' 
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                                    <div>
-                                      <strong>{note.profiles?.full_name || 'Kullanıcı'}</strong> tarafından eklendi
-                                    </div>
-                                    <div>{formatDate(note.created_at)}</div>
-                                  </div>
-                                  
-                                  <div style={{ marginBottom: '10px', whiteSpace: 'pre-wrap' }}>
-                                    {note.note_content}
-                                  </div>
-                                  
-                                  {note.promise_date && (
-                                    <div style={{ 
-                                      padding: '5px 10px', 
-                                      backgroundColor: '#e3f2fd', 
-                                      borderRadius: '4px',
-                                      display: 'inline-block',
-                                      fontSize: '13px',
-                                      color: '#1565c0',
-                                      marginBottom: '5px'
-                                    }}>
-                                      <strong>Söz Verilen Ödeme Tarihi:</strong> {formatDate(note.promise_date)}
-                                    </div>
-                                  )}
-                                  
-                                  {note.balance_at_time !== null && (
-                                    <div style={{ fontSize: '13px', color: '#666', marginTop: '5px' }}>
-                                      <strong>Bakiye:</strong> {parseFloat(note.balance_at_time).toLocaleString('tr-TR', {
-                                        style: 'currency',
-                                        currency: 'TRY'
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
-                              Bu müşteri için not bulunmuyor.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
-                  Bu sektörde müşteri bulunamadı.
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="card" style={{ padding: '20px', textAlign: 'center', color: '#888' }}>
-              Lütfen bir sektör seçin.
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
               <span>Not Kayıtları</span>
               <span>{recentNotes.length} not bulundu</span>
             </h3>
@@ -804,3 +674,135 @@ const NotesReport = () => {
           {selectedSector ? (
             <div className="card">
               <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                <span>{selectedSector} Sektörü Müşterileri</span>
+                <span>{sectorCustomers.length} müşteri bulundu</span>
+              </h3>
+              
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: '20px' }}>Müşteriler yükleniyor...</div>
+              ) : sectorCustomers.length > 0 ? (
+                <div>
+                  {sectorCustomers.map(customer => (
+                    <div key={customer.id} className="card" style={{ marginBottom: '10px', padding: '15px' }}>
+                      <div 
+                        style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          cursor: 'pointer' 
+                        }}
+                        onClick={() => toggleCustomerExpand(customer.id)}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 'bold' }}>{customer.name}</div>
+                          <div style={{ fontSize: '12px', color: '#888' }}>{customer.code}</div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span className="badge" style={{ 
+                            backgroundColor: customer.noteCount > 0 ? '#3498db' : '#ccc',
+                            color: 'white'
+                          }}>
+                            {customer.noteCount} Not
+                          </span>
+                          
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: '4px 8px', fontSize: '12px' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.location.href = `/customers/${customer.id}`;
+                            }}
+                          >
+                            Detay
+                          </button>
+                          
+                          <span style={{ 
+                            fontSize: '18px', 
+                            transition: 'transform 0.3s',
+                            transform: expandedCustomers[customer.id] ? 'rotate(180deg)' : 'rotate(0)'
+                          }}>
+                            ▼
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Genişletilmiş içerik - Notlar */}
+                      {expandedCustomers[customer.id] && (
+                        <div style={{ marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '15px' }}>
+                          {customer.notes.length > 0 ? (
+                            <div>
+                              {customer.notes.map(note => (
+                                <div 
+                                  key={note.id} 
+                                  style={{ 
+                                    padding: '10px', 
+                                    borderLeft: '3px solid #3498db',
+                                    marginBottom: '10px',
+                                    backgroundColor: '#f9f9f9' 
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                    <div>
+                                      <strong>{note.profiles?.full_name || 'Kullanıcı'}</strong> tarafından eklendi
+                                    </div>
+                                    <div>{formatDate(note.created_at)}</div>
+                                  </div>
+                                  
+                                  <div style={{ marginBottom: '10px', whiteSpace: 'pre-wrap' }}>
+                                    {note.note_content}
+                                  </div>
+                                  
+                                  {note.promise_date && (
+                                    <div style={{ 
+                                      padding: '5px 10px', 
+                                      backgroundColor: '#e3f2fd', 
+                                      borderRadius: '4px',
+                                      display: 'inline-block',
+                                      fontSize: '13px',
+                                      color: '#1565c0',
+                                      marginBottom: '5px'
+                                    }}>
+                                      <strong>Söz Verilen Ödeme Tarihi:</strong> {formatDate(note.promise_date)}
+                                    </div>
+                                  )}
+                                  
+                                  {note.balance_at_time !== null && (
+                                    <div style={{ fontSize: '13px', color: '#666', marginTop: '5px' }}>
+                                      <strong>Bakiye:</strong> {parseFloat(note.balance_at_time).toLocaleString('tr-TR', {
+                                        style: 'currency',
+                                        currency: 'TRY'
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
+                              Bu müşteri için not bulunmuyor.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
+                  Bu sektörde müşteri bulunamadı.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="card" style={{ padding: '20px', textAlign: 'center', color: '#888' }}>
+              Lütfen bir sektör seçin.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default NotesReport;
