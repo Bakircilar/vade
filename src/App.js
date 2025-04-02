@@ -15,6 +15,7 @@ import Profile from './pages/Profile';
 import Login from './pages/Login';
 import UserAssignments from './pages/UserAssignments';
 import AuthManager from './pages/AuthManager';
+import NotesReport from './pages/NotesReport'; // Yeni eklenen sayfa
 
 // Components
 import Header from './components/Header';
@@ -162,6 +163,8 @@ function App() {
               <Route path="/profile" element={session ? <Profile /> : <Navigate to="/login" />} />
               <Route path="/user-assignments" element={session && (isAdmin || isMuhasebeUser) ? <UserAssignments /> : <Navigate to="/" />} />
               <Route path="/auth-manager" element={session && isAdmin ? <AuthManager /> : <Navigate to="/" />} />
+              {/* Not Raporu sayfası - sadece admin ve muhasebe erişebilir */}
+              <Route path="/notes-report" element={session && (isAdmin || isMuhasebeUser) ? <NotesReport /> : <Navigate to="/" />} />
               <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
             </Routes>
           </main>
