@@ -67,6 +67,13 @@ const Header = ({ session, userRole, toggleMobileMenu, isMobileMenuOpen }) => {
     }
   };
 
+  // Mobil menü düğmesi için tıklama işleyicisi
+  const handleMenuToggle = () => {
+    if (toggleMobileMenu) {
+      toggleMobileMenu();
+    }
+  }
+
   return (
     <header style={{
       display: 'flex',
@@ -79,7 +86,7 @@ const Header = ({ session, userRole, toggleMobileMenu, isMobileMenuOpen }) => {
       {/* Hamburger Menu Button (Mobile Only) */}
       {session && isMobile && (
         <button 
-          onClick={toggleMobileMenu}
+          onClick={handleMenuToggle}
           aria-label="Toggle Menu"
           style={{
             background: 'none',

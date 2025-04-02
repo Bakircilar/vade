@@ -15,7 +15,7 @@ import Profile from './pages/Profile';
 import Login from './pages/Login';
 import UserAssignments from './pages/UserAssignments';
 import AuthManager from './pages/AuthManager';
-import NotesReport from './pages/NotesReport'; // Yeni eklenen sayfa
+import NotesReport from './pages/NotesReport'; // Not raporu sayfası
 
 // Components
 import Header from './components/Header';
@@ -122,8 +122,14 @@ function App() {
     }
   };
 
+  // Mobil menu toggle fonksiyonu - düzeltildi
   const toggleMobileMenu = () => {
     setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  // Mobil menu kapatma fonksiyonu
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
   };
 
   // Yönetici kontrolü
@@ -149,7 +155,7 @@ function App() {
               userRole={userRole} 
               isMuhasebe={isMuhasebe} 
               isMenuOpen={isMobileMenuOpen}
-              closeMenu={() => setIsMobileMenuOpen(false)}
+              closeMenu={closeMobileMenu}
             />
           )}
           <main className="content">

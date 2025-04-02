@@ -27,22 +27,32 @@ const NotesReport = () => {
   // Genel state
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [error, setError] = useState(null);
   
   // User access control
-  const { isAdmin, isMuhasebe } = useUserAccess();
-  
-  // İlk yükleme
+  const { isAdmin, isMuhasebe, loading: accessLoading } = useUserAccess();
+
+  // İlk yükleme kontrolü - Access loading tamam olduğunda kontrol et
   useEffect(() => {
-    if (!isAdmin && !isMuhasebe) {
-      toast.error('Bu sayfaya erişim izniniz bulunmuyor');
-      return;
+    if (!accessLoading) {
+      // Rol kontrolü
+      if (!isAdmin && !isMuhasebe) {
+        setAccessDenied(true);
+        return;
+      }
+      
+      // Sektörleri yükle
+      fetchSectors();
+      
+      // Not giren kullanıcıları yükle
+      fetchNoteUsers();
     }
-    
-    // Sektörleri yükle
-    fetchSectors();
-    
-    // Not giren kullanıcıları yükle
-    fetchNoteUsers();
+  }, [isAdmin, isMuhasebe, accessLoading]);
+
+  // Seçili rapor ve filtrelere göre verileri getir
+  useEffect(() => {
+    if (accessDenied || accessLoading) return;
     
     // Seçili rapor tipine göre veri yükle
     if (reportType === 'notes') {
@@ -50,8 +60,8 @@ const NotesReport = () => {
     } else if (reportType === 'sector' && selectedSector) {
       fetchSectorCustomers();
     }
-  }, [reportType, dateRange, selectedUser, selectedSector, isAdmin, isMuhasebe]);
-  
+  }, [reportType, dateRange, selectedUser, selectedSector, accessDenied, accessLoading]);
+
   // Sektörleri getir
   const fetchSectors = async () => {
     try {
@@ -70,13 +80,24 @@ const NotesReport = () => {
       setSectors(uniqueSectors);
     } catch (error) {
       console.error('Sektör yükleme hatası:', error);
-      toast.error('Sektörler yüklenirken bir hata oluştu');
+      setError('Sektörler yüklenirken bir hata oluştu');
     }
   };
   
   // Not giren kullanıcıları getir
   const fetchNoteUsers = async () => {
     try {
+      // customer_notes tablosunun var olup olmadığını kontrol et
+      const { count, error: tableError } = await supabase
+        .from('customer_notes')
+        .select('*', { count: 'exact', head: true });
+        
+      if (tableError) {
+        console.error('customer_notes tablosu bulunamadı:', tableError);
+        setError('Not tablosu bulunamadı veya erişilemedi');
+        return;
+      }
+    
       const { data, error } = await supabase
         .from('customer_notes')
         .select('user_id')
@@ -100,25 +121,39 @@ const NotesReport = () => {
       }
     } catch (error) {
       console.error('Kullanıcı yükleme hatası:', error);
-      toast.error('Kullanıcılar yüklenirken bir hata oluştu');
+      setError('Kullanıcılar yüklenirken bir hata oluştu');
     }
   };
   
   // Son notları getir
   const fetchRecentNotes = async () => {
+    if (accessDenied) return;
+    
     setLoading(true);
+    setError(null);
     try {
       // Son X gün için tarih aralığını hesapla
       const endDate = new Date();
       const startDate = subDays(new Date(), dateRange);
       
-      // Notları getir
+      // customer_notes tablosunun var olup olmadığını kontrol et
+      const { count, error: tableError } = await supabase
+        .from('customer_notes')
+        .select('*', { count: 'exact', head: true });
+        
+      if (tableError) {
+        console.error('customer_notes tablosu bulunamadı:', tableError);
+        setError('Not tablosu bulunamadı veya erişilemedi');
+        setRecentNotes([]);
+        return;
+      }
+      
+      // Notları getir - customers tablosu join ile
       let query = supabase
         .from('customer_notes')
         .select(`
           *,
-          customers (id, name, code, sector_code),
-          profiles (id, full_name)
+          customers:customer_id (id, name, code, sector_code)
         `)
         .gte('created_at', startDate.toISOString())
         .lte('created_at', endDate.toISOString())
@@ -133,10 +168,40 @@ const NotesReport = () => {
       
       if (error) throw error;
       
-      setRecentNotes(data || []);
+      // Kullanıcı bilgilerini getir
+      let notesWithUserInfo = [];
+      
+      if (data && data.length > 0) {
+        // Kullanıcı ID'lerini topla
+        const userIds = data
+          .filter(note => note.user_id)
+          .map(note => note.user_id);
+        
+        const uniqueUserIds = [...new Set(userIds)];
+        
+        // Kullanıcı bilgilerini getir
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', uniqueUserIds);
+          
+        if (profilesError) throw profilesError;
+        
+        // Kullanıcı bilgilerini notlara ekle
+        notesWithUserInfo = data.map(note => {
+          const userProfile = profiles?.find(profile => profile.id === note.user_id);
+          return {
+            ...note,
+            profiles: userProfile || null
+          };
+        });
+      }
+      
+      setRecentNotes(notesWithUserInfo);
     } catch (error) {
       console.error('Not yükleme hatası:', error);
-      toast.error('Notlar yüklenirken bir hata oluştu');
+      setError('Notlar yüklenirken bir hata oluştu');
+      setRecentNotes([]);
     } finally {
       setLoading(false);
     }
@@ -144,9 +209,10 @@ const NotesReport = () => {
   
   // Sektöre göre müşterileri getir
   const fetchSectorCustomers = async () => {
-    if (!selectedSector) return;
+    if (!selectedSector || accessDenied) return;
     
     setLoading(true);
+    setError(null);
     try {
       // Seçili sektördeki tüm müşterileri getir
       const { data: customers, error: customersError } = await supabase
@@ -165,13 +231,13 @@ const NotesReport = () => {
           .from('customer_notes')
           .select(`
             *,
-            profiles (id, full_name)
+            profiles:user_id (id, full_name)
           `)
           .eq('customer_id', customer.id)
           .order('created_at', { ascending: false })
           .limit(100); // Her müşteri için en fazla 100 not
           
-        if (notesError) {
+        if (notesError && notesError.code !== 'PGRST116') {
           console.error(`${customer.id} ID'li müşteri için notlar alınamadı:`, notesError);
         }
         
@@ -189,7 +255,8 @@ const NotesReport = () => {
       setSectorCustomers(customersWithNotes);
     } catch (error) {
       console.error('Sektör müşterileri yükleme hatası:', error);
-      toast.error('Sektör müşterileri yüklenirken bir hata oluştu');
+      setError('Sektör müşterileri yüklenirken bir hata oluştu');
+      setSectorCustomers([]);
     } finally {
       setLoading(false);
     }
@@ -340,7 +407,7 @@ const NotesReport = () => {
   };
   
   // Admin değilse erişimi engelle
-  if (!isAdmin && !isMuhasebe) {
+  if (accessDenied) {
     return (
       <div className="card">
         <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>
@@ -350,12 +417,48 @@ const NotesReport = () => {
       </div>
     );
   }
+  
+  // Yükleniyor durumu
+  if (accessLoading) {
+    return (
+      <div className="card" style={{ padding: '20px', textAlign: 'center' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '20px' }}>
+          Yükleniyor...
+        </h2>
+        <p>Lütfen bekleyin, kullanıcı hakları kontrol ediliyor.</p>
+      </div>
+    );
+  }
 
   return (
     <div>
       <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '20px' }}>
         Not ve Sektör Raporları
       </h1>
+      
+      {/* Hata mesajı */}
+      {error && (
+        <div className="card" style={{ padding: '15px', marginBottom: '20px', backgroundColor: '#f8d7da', color: '#721c24' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '10px' }}>
+            Hata Oluştu
+          </h3>
+          <p>{error}</p>
+          <button 
+            onClick={() => {
+              setError(null);
+              if (reportType === 'notes') {
+                fetchRecentNotes();
+              } else if (reportType === 'sector' && selectedSector) {
+                fetchSectorCustomers();
+              }
+            }} 
+            className="btn btn-danger"
+            style={{ marginTop: '10px' }}
+          >
+            Yeniden Dene
+          </button>
+        </div>
+      )}
       
       {/* Rapor Tipi Seçimi */}
       <div className="card" style={{ marginBottom: '20px', padding: '15px' }}>
@@ -501,7 +604,7 @@ const NotesReport = () => {
                           ) : '-'}
                         </td>
                         <td style={{ padding: '10px', borderBottom: '1px solid #eee', textAlign: 'center' }}>
-                          <Link
+                          <Link 
                             to={`/customers/${note.customer_id}`}
                             className="btn btn-primary"
                             style={{ padding: '4px 8px', fontSize: '12px' }}
@@ -700,6 +803,4 @@ const NotesReport = () => {
       )}
     </div>
   );
-};
-
-export default NotesReport;
+  

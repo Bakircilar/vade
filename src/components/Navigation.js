@@ -1,22 +1,40 @@
 // src/components/Navigation.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 
 const Navigation = ({ userRole, isMuhasebe, isMenuOpen, closeMenu }) => {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   
-  const toggleMenu = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
-  };
+  // Ekran boyutu değişikliklerini izle
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
   
+  // Büyük ekranlarda menü daima açık
+  const isMobile = windowWidth < 768;
+
   const navStyle = {
-    width: '100%',
+    width: isMobile ? '85%' : '240px',
+    maxWidth: isMobile ? '300px' : 'none',
     backgroundColor: 'var(--card-background)',
-    boxShadow: '0 1px 4px rgba(0, 0, 0, 0.1)',
+    boxShadow: '1px 0 4px rgba(0, 0, 0, 0.1)',
     zIndex: 100,
+    padding: '20px 0',
+    height: isMobile ? '100%' : 'auto',
+    position: isMobile ? 'fixed' : 'relative',
+    left: isMobile ? (isMenuOpen ? '0' : '-100%') : '0',
+    transition: 'left 0.3s ease',
+    overflowY: 'auto'
   };
 
-  const mobileNavContainerStyle = {
+  const overlayStyle = {
     position: 'fixed',
     top: '60px', // Header yüksekliğine göre ayarlayın
     left: 0,
@@ -24,46 +42,7 @@ const Navigation = ({ userRole, isMuhasebe, isMenuOpen, closeMenu }) => {
     bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     zIndex: 99,
-    display: isMenuOpen ? 'block' : 'none',
-  };
-
-  const desktopMenuStyle = {
-    width: '240px',
-    backgroundColor: 'var(--card-background)',
-    boxShadow: '1px 0 4px rgba(0, 0, 0, 0.1)',
-    padding: '20px 0',
-    display: 'none', // Mobilde varsayılan olarak gizli
-    '@media (min-width: 768px)': {
-      display: 'block', // Masaüstünde göster
-    },
-  };
-
-  const mobileMenuStyle = {
-    width: '85%',
-    maxWidth: '300px',
-    height: '100%',
-    backgroundColor: 'var(--card-background)',
-    boxShadow: '1px 0 4px rgba(0, 0, 0, 0.1)',
-    padding: '20px 0',
-    position: 'fixed',
-    top: '60px', // Header yüksekliğine göre ayarlayın
-    left: isMenuOpen ? '0' : '-100%',
-    transition: 'left 0.3s ease',
-    overflowY: 'auto',
-    zIndex: 100,
-  };
-
-  const hamburgerStyle = {
-    display: 'block',
-    padding: '10px 15px',
-    cursor: 'pointer',
-    background: 'none',
-    border: 'none',
-    fontSize: '24px',
-    color: 'var(--text-color)',
-    '@media (min-width: 768px)': {
-      display: 'none', // Masaüstünde gizle
-    },
+    display: isMobile && isMenuOpen ? 'block' : 'none'
   };
 
   const linkStyle = {
@@ -95,129 +74,115 @@ const Navigation = ({ userRole, isMuhasebe, isMenuOpen, closeMenu }) => {
     marginBottom: '10px',
   };
 
-  // Hem mobil hem de masaüstü menülerinde kullanılmak üzere menü bağlantıları
-  const renderMenuLinks = () => (
-    <>
-      {/* Ana Menü Öğeleri */}
-      <NavLink 
-        to="/" 
-        style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-        end
-        onClick={closeMenu}
-      >
-        Ana Sayfa
-      </NavLink>
-      
-      <NavLink 
-        to="/customers" 
-        style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-        onClick={closeMenu}
-      >
-        Müşteriler
-      </NavLink>
-      
-      <NavLink 
-        to="/payments" 
-        style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-        onClick={closeMenu}
-      >
-        Vade Takip
-      </NavLink>
-      
-      <NavLink 
-        to="/import" 
-        style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-        onClick={closeMenu}
-      >
-        Veri İçe Aktar
-      </NavLink>
-      
-      {/* Not Raporları - sadece admin ve muhasebe kullanıcılar için */}
-      {(userRole === 'admin' || userRole === 'muhasebe') && (
-        <NavLink 
-          to="/notes-report" 
-          style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-          onClick={closeMenu}
-        >
-          Not Raporları
-        </NavLink>
-      )}
-      
-      {/* Hesap Bölümü */}
-      <div style={sectionStyle}>
-        <div style={sectionTitleStyle}>Hesap</div>
-        
-        <NavLink 
-          to="/profile" 
-          style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-          onClick={closeMenu}
-        >
-          Profilim
-        </NavLink>
-        
-        {/* Sadece admin ve muhasebe kullanıcılar için */}
-        {(userRole === 'admin' || userRole === 'muhasebe') && (
-          <>
-            <NavLink 
-              to="/user-assignments" 
-              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-              onClick={closeMenu}
-            >
-              Müşteri Atamaları
-            </NavLink>
-          </>
-        )}
-        
-        {/* Sadece admin kullanıcılar için */}
-        {userRole === 'admin' && (
-          <NavLink 
-            to="/auth-manager" 
-            style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-            onClick={closeMenu}
-          >
-            Kullanıcı Yönetimi
-          </NavLink>
-        )}
-      </div>
-      
-      {/* Rol göstergesi */}
-      <div style={{
-        marginTop: '20px',
-        padding: '10px 20px',
-        backgroundColor: 'var(--hover-color)',
-        fontSize: '13px',
-        color: 'var(--text-secondary)'
-      }}>
-        Rol: {userRole === 'admin' ? 'Yönetici' : 
-              userRole === 'muhasebe' ? 'Muhasebe' : 'Kullanıcı'}
-      </div>
-    </>
-  );
+  const handleLinkClick = () => {
+    if (isMobile && closeMenu) {
+      closeMenu();
+    }
+  };
 
   return (
     <>
-      {/* Mobil Hamburger Butonu */}
-      <button 
-        style={hamburgerStyle}
-        onClick={toggleMenu}
-        aria-label="Menüyü Aç/Kapat"
-      >
-        {isMobileMenuOpen ? '✕' : '☰'}
-      </button>
-      
       {/* Mobil Arka Plan Overlay */}
-      {isMenuOpen && (
-        <div style={mobileNavContainerStyle} onClick={closeMenu}></div>
+      {isMobile && (
+        <div style={overlayStyle} onClick={closeMenu}></div>
       )}
       
-      {/* Mobil Menü */}
-      <nav style={{...navStyle, ...mobileMenuStyle}}>
-        {renderMenuLinks()}
-      </nav>
-      
-      {/* Masaüstü Menü */}
-      <nav style={{...navStyle, ...desktopMenuStyle}}>
-        {renderMenuLinks()}
+      {/* Navigasyon Menüsü */}
+      <nav style={navStyle}>
+        {/* Ana Menü Öğeleri */}
+        <NavLink 
+          to="/" 
+          style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+          end
+          onClick={handleLinkClick}
+        >
+          Ana Sayfa
+        </NavLink>
+        
+        <NavLink 
+          to="/customers" 
+          style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+          onClick={handleLinkClick}
+        >
+          Müşteriler
+        </NavLink>
+        
+        <NavLink 
+          to="/payments" 
+          style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+          onClick={handleLinkClick}
+        >
+          Vade Takip
+        </NavLink>
+        
+        {/* Veri İçe Aktar menü öğesi - sadece admin ve muhasebe için */}
+        {(userRole === 'admin' || isMuhasebe) && (
+          <NavLink 
+            to="/import" 
+            style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+            onClick={handleLinkClick}
+          >
+            Veri İçe Aktar
+          </NavLink>
+        )}
+        
+        {/* Not Raporları - sadece admin ve muhasebe kullanıcılar için */}
+        {(userRole === 'admin' || isMuhasebe) && (
+          <NavLink 
+            to="/notes-report" 
+            style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+            onClick={handleLinkClick}
+          >
+            Not Raporları
+          </NavLink>
+        )}
+        
+        {/* Hesap Bölümü */}
+        <div style={sectionStyle}>
+          <div style={sectionTitleStyle}>Hesap</div>
+          
+          <NavLink 
+            to="/profile" 
+            style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+            onClick={handleLinkClick}
+          >
+            Profilim
+          </NavLink>
+          
+          {/* Sadece admin ve muhasebe kullanıcılar için */}
+          {(userRole === 'admin' || isMuhasebe) && (
+            <NavLink 
+              to="/user-assignments" 
+              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+              onClick={handleLinkClick}
+            >
+              Müşteri Atamaları
+            </NavLink>
+          )}
+          
+          {/* Sadece admin kullanıcılar için */}
+          {userRole === 'admin' && (
+            <NavLink 
+              to="/auth-manager" 
+              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+              onClick={handleLinkClick}
+            >
+              Kullanıcı Yönetimi
+            </NavLink>
+          )}
+        </div>
+        
+        {/* Rol göstergesi */}
+        <div style={{
+          marginTop: '20px',
+          padding: '10px 20px',
+          backgroundColor: 'var(--hover-color)',
+          fontSize: '13px',
+          color: 'var(--text-secondary)'
+        }}>
+          Rol: {userRole === 'admin' ? 'Yönetici' : 
+                userRole === 'muhasebe' ? 'Muhasebe' : 'Kullanıcı'}
+        </div>
       </nav>
     </>
   );
