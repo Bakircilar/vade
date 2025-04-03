@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
-import { format, addDays } from 'date-fns';
+import { format, addDays, differenceInDays } from 'date-fns';
 import { tr } from 'date-fns/locale';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
@@ -154,6 +154,166 @@ const QuickNoteForm = ({ customerId, customerName, onClose, onSubmit }) => {
   );
 };
 
+// Notları Görüntüle Modal Bileşeni - YENİ EKLENDİ
+const NotesModal = ({ customerId, customerName, onClose }) => {
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (customerId) {
+      fetchNotes();
+    }
+  }, [customerId]);
+
+  // Notları getir
+  const fetchNotes = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('customer_notes')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setNotes(data || []);
+    } catch (error) {
+      console.error('Notlar yüklenirken hata:', error);
+      toast.error('Notlar yüklenirken bir hata oluştu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Tarihi formatla
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    try {
+      return format(new Date(dateString), 'dd MMM yyyy HH:mm', { locale: tr });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  // Para birimi formatla
+  const formatCurrency = (amount) => {
+    if (amount === null || amount === undefined) return '-';
+    return new Intl.NumberFormat('tr-TR', { 
+      style: 'currency', 
+      currency: 'TRY' 
+    }).format(amount);
+  };
+
+  return (
+    <div className="card" style={{ 
+      padding: '15px', 
+      position: 'absolute',
+      width: '80%',
+      maxWidth: '800px',
+      maxHeight: '80vh',
+      overflowY: 'auto',
+      boxShadow: '0 4px 8px rgba(0,0,0,0.2)',
+      zIndex: 1000,
+      backgroundColor: 'white',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        <h3 style={{ fontSize: '18px', fontWeight: 'bold' }}>{customerName} - Notlar</h3>
+        <button 
+          onClick={onClose}
+          style={{ 
+            background: 'none', 
+            border: 'none', 
+            fontSize: '20px', 
+            cursor: 'pointer',
+            color: '#888' 
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div style={{ borderBottom: '1px solid #eee', marginBottom: '15px', paddingBottom: '10px' }}>
+        <Link
+          to={`/customers/${customerId}`}
+          className="btn btn-primary"
+          style={{ padding: '6px 10px', fontSize: '13px' }}
+          onClick={onClose}
+        >
+          Müşteri Detayına Git
+        </Link>
+      </div>
+      
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '20px' }}>Notlar yükleniyor...</div>
+      ) : notes.length > 0 ? (
+        <div>
+          {notes.map((note) => (
+            <div 
+              key={note.id} 
+              className="card" 
+              style={{ 
+                marginBottom: '15px', 
+                padding: '15px',
+                backgroundColor: '#f9f9f9',
+                border: '1px solid #eee',
+                borderLeft: note.promise_date ? '3px solid #3498db' : '1px solid #eee'
+              }}
+            >
+              <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 'bold', color: '#666' }}>
+                  {formatDate(note.created_at)}
+                </span>
+              </div>
+
+              <p style={{ margin: '0 0 10px 0', whiteSpace: 'pre-wrap' }}>{note.note_content}</p>
+              
+              {note.promise_date && (
+                <div 
+                  style={{ 
+                    padding: '5px 10px', 
+                    backgroundColor: '#e3f2fd', 
+                    borderRadius: '4px',
+                    display: 'inline-block',
+                    fontSize: '13px',
+                    color: '#1565c0',
+                    marginBottom: '10px'
+                  }}
+                >
+                  <strong>Söz Verilen Ödeme Tarihi:</strong> {formatDate(note.promise_date)}
+                </div>
+              )}
+              
+              {/* Bakiye Bilgileri */}
+              <div style={{ marginTop: '10px' }}>
+                {note.balance_at_time !== null && note.balance_at_time !== undefined && (
+                  <div style={{ 
+                    padding: '8px', 
+                    backgroundColor: '#f8fafc', 
+                    borderRadius: '4px',
+                    border: '1px solid #e2e8f0'
+                  }}>
+                    <div style={{ fontSize: '12px', color: '#475569' }}>Not Eklendiğindeki Bakiye:</div>
+                    <div style={{ fontWeight: 'bold' }}>
+                      {formatCurrency(note.balance_at_time)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
+          Bu müşteri için henüz not girilmemiş
+        </p>
+      )}
+    </div>
+  );
+};
+
 const PaymentList = () => {
   const location = useLocation();
   // URL parametre değerlerini al
@@ -183,6 +343,16 @@ const PaymentList = () => {
     customerId: null,
     customerName: ''
   });
+
+  // Notları görüntülemek için state - YENİ EKLENDİ
+  const [notesModalData, setNotesModalData] = useState({
+    show: false,
+    customerId: null,
+    customerName: ''
+  });
+  
+  // Son not tarihlerini saklamak için state - YENİ EKLENDİ
+  const [lastNoteDates, setLastNoteDates] = useState({});
   
   // İstatistikler
   const [stats, setStats] = useState({
@@ -235,6 +405,89 @@ const PaymentList = () => {
       customerId: null,
       customerName: ''
     });
+  };
+
+  // Notları görüntüleme modalını aç - YENİ EKLENDİ
+  const openNotesModal = (customerId, customerName) => {
+    setNotesModalData({
+      show: true,
+      customerId,
+      customerName
+    });
+  };
+
+  // Notları görüntüleme modalını kapat - YENİ EKLENDİ
+  const closeNotesModal = () => {
+    setNotesModalData({
+      show: false,
+      customerId: null,
+      customerName: ''
+    });
+  };
+
+  // Her müşteri için son not tarihini getir - YENİ EKLENDİ
+  const fetchLastNoteDates = async (customerIds) => {
+    try {
+      // Her müşteri için en son notu getir
+      const promises = customerIds.map(async (customerId) => {
+        try {
+          const { data, error } = await supabase
+            .from('customer_notes')
+            .select('created_at')
+            .eq('customer_id', customerId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+            
+          if (error) throw error;
+          
+          return {
+            customerId,
+            lastNoteDate: data && data.length > 0 ? data[0].created_at : null
+          };
+        } catch (err) {
+          console.error(`Son not tarihi getirme hatası (${customerId}):`, err);
+          return { customerId, lastNoteDate: null };
+        }
+      });
+      
+      const results = await Promise.all(promises);
+      
+      // Sonuçları bir objeye dönüştür
+      const dateMap = {};
+      results.forEach(result => {
+        if (result.lastNoteDate) {
+          dateMap[result.customerId] = result.lastNoteDate;
+        }
+      });
+      
+      setLastNoteDates(dateMap);
+    } catch (err) {
+      console.error('Son not tarihleri yükleme hatası:', err);
+    }
+  };
+
+  // Son not tarihinden bugüne geçen gün sayısını hesapla - YENİ EKLENDİ
+  const calculateDaysSinceLastNote = (customerId) => {
+    const lastNoteDate = lastNoteDates[customerId];
+    if (!lastNoteDate) return null;
+    
+    try {
+      const date = new Date(lastNoteDate);
+      const today = new Date();
+      
+      // Saatleri sıfırla (gün bazında karşılaştır)
+      date.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      
+      // Milisaniye farkını gün farkına çevir
+      const diffTime = Math.abs(today - date);
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+      
+      return diffDays;
+    } catch (err) {
+      console.error('Gün farkı hesaplama hatası:', err);
+      return null;
+    }
   };
 
   // Veri getirme fonksiyonu - KEY FIX - REMOVED initialLoadDone CHECK
@@ -432,8 +685,7 @@ const PaymentList = () => {
           return {
             ...balance,
             effective_due_date: effectiveDueDate ? effectiveDueDate.toISOString() : null,
-            is_past_due: isPastDue,
-            is_upcoming: isUpcoming,
+            is_past_due: isPastDue,is_upcoming: isUpcoming,
             calculated_past_due: pastDueBalance,
             calculated_not_due: notDueBalance,
             calculated_total: totalBalanceValue
@@ -513,6 +765,12 @@ const PaymentList = () => {
       // Bakiyeleri ayarla
       setBalances(filteredBalances);
       
+      // Son not tarihlerini getir - YENİ EKLENDİ
+      if (filteredBalances.length > 0) {
+        const customerIds = filteredBalances.map(balance => balance.customer_id);
+        fetchLastNoteDates(customerIds);
+      }
+      
     } catch (err) {
       console.error("Veri çekerken hata:", err);
       setError(err.message);
@@ -572,6 +830,21 @@ const PaymentList = () => {
           return sortConfig.direction === 'ascending' ? 1 : -1;
         }
         return 0;
+      }
+      
+      // Son not tarihi için sıralama - YENİ EKLENDİ
+      if (sortConfig.key === 'last_note_date') {
+        const aDate = lastNoteDates[a.customer_id] ? new Date(lastNoteDates[a.customer_id]) : null;
+        const bDate = lastNoteDates[b.customer_id] ? new Date(lastNoteDates[b.customer_id]) : null;
+        
+        // Tarih olmayanları en sona koy
+        if (!aDate && !bDate) return 0;
+        if (!aDate) return 1;
+        if (!bDate) return -1;
+        
+        return sortConfig.direction === 'ascending'
+          ? aDate - bDate
+          : bDate - aDate;
       }
       
       // Vade tarihi için sıralama - 'Yaklaşanlar' filtresinde not_due_date kullan
@@ -1066,6 +1339,10 @@ const PaymentList = () => {
                     <th style={{ cursor: 'pointer' }} onClick={() => requestSort('calculated_total')}>
                       Toplam Bakiye {getSortDirectionIcon('calculated_total')}
                     </th>
+                    {/* Son Not Tarihi Kolonu - YENİ EKLENDİ */}
+                    <th style={{ cursor: 'pointer' }} onClick={() => requestSort('last_note_date')}>
+                      Son Not {getSortDirectionIcon('last_note_date')}
+                    </th>
                     <th>Durum</th>
                     <th>İşlemler</th>
                   </tr>
@@ -1073,6 +1350,10 @@ const PaymentList = () => {
                 <tbody>
                   {filteredBalances.map((balance) => {
                     const status = getStatusBadge(balance);
+                    
+                    // Son not tarihi ve kaç gün önce eklendiği bilgisi - YENİ EKLENDİ
+                    const lastNoteDate = lastNoteDates[balance.customer_id] || null;
+                    const daysSinceLastNote = lastNoteDate ? calculateDaysSinceLastNote(balance.customer_id) : null;
 
                     return (
                       <tr key={balance.id}>
@@ -1100,11 +1381,35 @@ const PaymentList = () => {
                         <td style={{ fontWeight: 'bold' }}>
                           {formatCurrency(balance.calculated_total)}
                         </td>
+                        {/* Son Not Tarihi Hücresi - YENİ EKLENDİ */}
+                        <td>
+                          {lastNoteDate ? (
+                            <div>
+                              <div style={{ fontSize: '12px' }}>
+                                {format(new Date(lastNoteDate), 'dd.MM.yyyy', { locale: tr })}
+                              </div>
+                              {daysSinceLastNote !== null && (
+                                <div style={{ 
+                                  fontSize: '11px',
+                                  color: daysSinceLastNote > 30 ? '#e74c3c' : 
+                                         daysSinceLastNote > 14 ? '#f39c12' : '#3498db',
+                                  fontWeight: 'bold'
+                                }}>
+                                  {daysSinceLastNote === 0 ? 'Bugün' : 
+                                   daysSinceLastNote === 1 ? 'Dün' : 
+                                   `${daysSinceLastNote} gün önce`}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span style={{ color: '#888', fontSize: '12px' }}>Not yok</span>
+                          )}
+                        </td>
                         <td>
                           <span className={`badge ${status.class}`}>{status.text}</span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: '5px' }}>
+                          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
                             <Link
                               to={`/customers/${balance.customer_id}`}
                               className="btn btn-primary"
@@ -1112,6 +1417,14 @@ const PaymentList = () => {
                             >
                               Detay
                             </Link>
+                            {/* Notları Görüntüle Butonu - YENİ EKLENDİ */}
+                            <button
+                              onClick={() => openNotesModal(balance.customer_id, balance.customers?.name || 'Müşteri')}
+                              className="btn"
+                              style={{ padding: '4px 8px', fontSize: '12px', backgroundColor: '#3498db', color: 'white' }}
+                            >
+                              Notları Görüntüle
+                            </button>
                             <button
                               onClick={() => openQuickNote(balance.customer_id, balance.customers?.name || 'Müşteri')}
                               className="btn"
@@ -1168,6 +1481,25 @@ const PaymentList = () => {
             onSubmit={() => {
               fetchData(true);
             }}
+          />
+        </div>
+      )}
+
+      {/* Notları Görüntüleme Modal - YENİ EKLENDİ */}
+      {notesModalData.show && (
+        <div style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          zIndex: 999
+        }}>
+          <NotesModal 
+            customerId={notesModalData.customerId}
+            customerName={notesModalData.customerName}
+            onClose={closeNotesModal}
           />
         </div>
       )}
