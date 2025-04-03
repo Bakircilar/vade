@@ -1,4 +1,4 @@
-// src/components/EnhancedCustomerNotes.js - FIXED
+// src/components/EnhancedCustomerNotes.js - ENHANCED with automatic reminders
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { toast } from 'react-toastify';
@@ -23,6 +23,33 @@ const NOTE_TAGS = [
   { id: 'partial', label: 'Kısmi Ödeme', color: '#9b59b6' },
   { id: 'other', label: 'Diğer', color: '#95a5a6' }
 ];
+
+// Söz verilen tarihin bir iş günü öncesini hesaplama işlevi
+const getBusinessDayBefore = (dateString) => {
+  if (!dateString) return null;
+  
+  try {
+    const date = new Date(dateString);
+    
+    // Tarihi bir gün geriye al
+    date.setDate(date.getDate() - 1);
+    
+    // Eğer pazar günüyse, cuma gününe ayarla (2 gün geri)
+    if (date.getDay() === 0) { // 0 = Pazar
+      date.setDate(date.getDate() - 2);
+    }
+    // Eğer cumartesi günüyse, cuma gününe ayarla (1 gün geri)
+    else if (date.getDay() === 6) { // 6 = Cumartesi
+      date.setDate(date.getDate() - 1);
+    }
+    
+    // ISO formatında dön
+    return format(date, 'yyyy-MM-dd');
+  } catch (error) {
+    console.error('Tarih dönüştürme hatası:', error);
+    return null;
+  }
+};
 
 const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDueBalance, totalBalance }) => {
   const [notes, setNotes] = useState([]);
@@ -252,6 +279,17 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
       // Opsiyonel alanları ekle - hataya neden olabilecek alanları kontrol et ve ekle
       if (promiseDate) {
         simpleNoteData.promise_date = promiseDate;
+        
+        // Eğer söz verilen ödeme tarihi varsa ve hatırlatıcı seçilmemişse
+        // otomatik olarak bir iş günü öncesine hatırlatıcı ekle
+        if (reminderType === 'none') {
+          const reminderDay = getBusinessDayBefore(promiseDate);
+          if (reminderDay) {
+            simpleNoteData.reminder_date = reminderDay;
+            simpleNoteData.reminder_note = `${customerName || 'Müşteri'} için yarın ödeme günü`;
+            simpleNoteData.reminder_completed = false;
+          }
+        }
       }
       
       if (selectedTags && selectedTags.length > 0) {
@@ -313,7 +351,8 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
       
       // Hatırlatıcı için bildirim oluşturma işlemi
       // Eğer hatırlatıcı varsa bildirim oluştur
-      if (reminderType !== 'none' && reminderDate && simpleNoteData.user_id) {
+      if ((reminderType !== 'none' && reminderDate && simpleNoteData.user_id) || 
+          (promiseDate && reminderType === 'none' && simpleNoteData.reminder_date)) {
         try {
           console.log("Hatırlatıcı bildirimi oluşturuluyor...");
           const notification = {
@@ -321,7 +360,7 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
             customer_id: customerId,
             type: 'note_reminder',
             title: `${customerName || 'Müşteri'} için hatırlatıcı`,
-            message: reminderNote || 'Müşteri görüşmesi hatırlatıcısı',
+            message: simpleNoteData.reminder_note || 'Müşteri görüşmesi hatırlatıcısı',
             link: `/customers/${customerId}`,
             is_read: false,
             created_at: new Date().toISOString()
@@ -545,7 +584,20 @@ const EnhancedCustomerNotes = ({ customerId, customerName, pastDueBalance, notDu
             type="date"
             id="promiseDate"
             value={promiseDate}
-            onChange={(e) => setPromiseDate(e.target.value)}
+            onChange={(e) => {
+              const newDate = e.target.value;
+              setPromiseDate(newDate);
+              
+              // Otomatik hatırlatıcı oluştur (sadece tarih seçildiğinde ve hatırlatıcı yoksa)
+              if (newDate && reminderType === 'none') {
+                const reminderDay = getBusinessDayBefore(newDate);
+                if (reminderDay) {
+                  setReminderType('custom');
+                  setReminderDate(reminderDay);
+                  setReminderNote(`${customerName || 'Müşteri'} için yarın ödeme günü`);
+                }
+              }
+            }}
             className="form-control"
             style={{ 
               width: '100%', 

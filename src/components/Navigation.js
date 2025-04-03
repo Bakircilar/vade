@@ -115,6 +115,15 @@ const Navigation = ({ userRole, isMuhasebe, isMenuOpen, closeMenu }) => {
           Vade Takip
         </NavLink>
         
+        {/* Hatırlatıcı Takvimi - tüm kullanıcılar için */}
+        <NavLink 
+          to="/calendar" 
+          style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+          onClick={handleLinkClick}
+        >
+          Hatırlatıcı Takvimi
+        </NavLink>
+        
         {/* Veri İçe Aktar menü öğesi - sadece admin ve muhasebe için */}
         {(userRole === 'admin' || isMuhasebe) && (
           <NavLink 

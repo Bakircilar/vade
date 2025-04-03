@@ -6,6 +6,7 @@ import { supabase } from './services/supabase';
 
 // Pages
 import Dashboard from './pages/Dashboard';
+import Calendar from './pages/Calendar';
 import CustomerList from './pages/CustomerList';
 import CustomerDetail from './pages/CustomerDetail';
 import PaymentList from './pages/PaymentList';
@@ -162,6 +163,7 @@ function App() {
             <Routes>
               <Route path="/" element={session ? <Dashboard /> : <Navigate to="/login" />} />
               <Route path="/customers" element={session ? <CustomerList /> : <Navigate to="/login" />} />
+              <Route path="/calendar" element={session ? <Calendar /> : <Navigate to="/login" />} />
               <Route path="/customers/:id" element={session ? <EnhancedCustomerDetail /> : <Navigate to="/login" />} />
               <Route path="/payments" element={session ? <PaymentList /> : <Navigate to="/login" />} />
               <Route path="/payments/:id" element={session ? <PaymentDetail /> : <Navigate to="/login" />} />
