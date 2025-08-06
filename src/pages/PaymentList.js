@@ -526,7 +526,23 @@ const PaymentList = () => {
         // Erişim filtresi ekle - admin ve muhasebe dışındaki kullanıcılar için
         if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
           console.log("Normal kullanıcı için filtre uygulanıyor");
-          query = query.in('customer_id', assignedIds);
+          
+          // ÇOK FAZLA ID VARSA LIMIT UYGULA
+          if (assignedIds.length > 200) {
+            // İlk 200 müşteriyi al
+            const limitedIds = assignedIds.slice(0, 200);
+            query = query.in('customer_id', limitedIds);
+            console.log(`İlk ${limitedIds.length} müşteri gösteriliyor (toplam ${assignedIds.length})`);
+            
+            // Kullanıcıya bilgi ver (sadece ilk sayfa yüklenirken)
+            if (page === 0) {
+              toast.info(`Size atanan ${assignedIds.length} müşteriden ilk 200'ü gösteriliyor. Daha fazlası için arama kullanın.`, {
+                autoClose: 5000
+              });
+            }
+          } else {
+            query = query.in('customer_id', assignedIds);
+          }
         } else if (!isAdmin && !isMuhasebe) {
           // Hiç atanmış müşteri yoksa ve admin veya muhasebe değilse
           console.log("Kullanıcıya atanmış müşteri yok veya erişim yetkisi yok");
