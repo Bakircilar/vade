@@ -9,7 +9,7 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 const ManagementReports = () => {
   const [managementData, setManagementData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [selectedPeriod, setSelectedPeriod] = useState('month');
+  const [selectedPeriod, setSelectedPeriod] = useState('year');
   const [selectedMetric, setSelectedMetric] = useState('performance');
   const { isAdmin, isMuhasebe } = useUserAccess();
 
@@ -158,9 +158,9 @@ const ManagementReports = () => {
   };
 
   const processManagementData = (users, notes, loginLogs, assignments, balances, startDate, endDate) => {
-    // Kullanıcı performans metrikleri - created_by olmadığı için not sayısını alamıyoruz
+    // Kullanıcı performans metrikleri - created_by field'ı kontrol edildi
     const userPerformance = users.map(user => {
-      const userNotes = []; // notes.filter(note => note.created_by === user.id); - created_by yok
+      const userNotes = notes.filter(note => note.created_by === user.id);
       const userLogins = loginLogs.filter(login => login.user_id === user.id);
       const userAssignments = assignments.filter(assign => assign.user_id === user.id);
 
@@ -216,29 +216,6 @@ const ManagementReports = () => {
       .sort((a, b) => a.activityScore - b.activityScore)
       .slice(0, 5);
 
-    // Rol bazlı istatistikler
-    const roleStats = {};
-    userPerformance.forEach(user => {
-      const role = user.role || 'Tanımsız';
-      if (!roleStats[role]) {
-        roleStats[role] = {
-          name: role,
-          count: 0,
-          totalNotes: 0,
-          totalAssignments: 0,
-          avgActivityScore: 0
-        };
-      }
-      roleStats[role].count++;
-      roleStats[role].totalNotes += user.noteCount;
-      roleStats[role].totalAssignments += user.assignedCustomers;
-      roleStats[role].avgActivityScore += user.activityScore;
-    });
-
-    // Ortalama skorları hesapla
-    Object.values(roleStats).forEach(role => {
-      role.avgActivityScore = role.count > 0 ? (role.avgActivityScore / role.count).toFixed(1) : 0;
-    });
 
     // Günlük aktivite trendi
     const dailyTrend = {};
@@ -268,20 +245,6 @@ const ManagementReports = () => {
       }
     });
 
-    // Sektör bazlı faaliyet - created_by olmadığı için basitleştirildi
-    const sectorActivity = {};
-    notes.forEach(note => {
-      const sector = note.customers?.sector_code || 'Belirsiz';
-      if (!sectorActivity[sector]) {
-        sectorActivity[sector] = {
-          name: sector,
-          noteCount: 0,
-          users: new Set()
-        };
-      }
-      sectorActivity[sector].noteCount++;
-      // created_by olmadığı için user tracking kaldırıldı
-    });
 
     // Problem alanları tespit et
     const issues = [];
@@ -333,14 +296,9 @@ const ManagementReports = () => {
       userPerformance,
       topPerformers,
       leastActive,
-      roleStats: Object.values(roleStats),
       dailyTrend: Object.values(dailyTrend).map(day => ({
         ...day,
         activeUsers: day.users.size
-      })),
-      sectorActivity: Object.values(sectorActivity).map(sector => ({
-        ...sector,
-        uniqueUsers: sector.users.size
       })),
       issues,
       period: { start: startDate, end: endDate }
@@ -408,6 +366,18 @@ const ManagementReports = () => {
               <option value="year">Son 12 Ay</option>
             </select>
           </div>
+
+          {managementData && (
+            <div style={{
+              padding: '10px',
+              backgroundColor: '#f8f9fa',
+              borderRadius: '4px',
+              fontSize: '14px',
+              color: '#666'
+            }}>
+              <strong>Rapor Tarihi:</strong> {format(managementData.period.start, 'dd MMM yyyy', { locale: tr })} - {format(managementData.period.end, 'dd MMM yyyy', { locale: tr })}
+            </div>
+          )}
 
           <div>
             <label style={{ display: 'block', marginBottom: '5px' }}>Metrik:</label>
@@ -595,53 +565,6 @@ const ManagementReports = () => {
           </div>
 
           {/* İki sütunlu alan */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-            {/* Rol bazlı performans */}
-            <div className="card">
-              <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '15px' }}>
-                👥 Rol Bazlı Performans
-              </h3>
-              <div style={{ height: '250px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={managementData.roleStats}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="avgActivityScore" fill="#8884d8" name="Ortalama Skor" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* Sektör aktivitesi */}
-            <div className="card">
-              <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '15px' }}>
-                🏢 Sektör Bazlı Aktivite
-              </h3>
-              <div style={{ height: '250px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={managementData.sectorActivity.slice(0, 6)}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="noteCount"
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                    >
-                      {managementData.sectorActivity.slice(0, 6).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </div>
 
           {/* Düşük performans gösteren kullanıcılar */}
           {managementData.leastActive.length > 0 && (
