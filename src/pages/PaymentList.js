@@ -485,8 +485,16 @@ const PaymentList = () => {
         totalPages: 1
       }));
 
-      // Update stats
-      setStats(processedData.stats);
+      // Get total balance stats for all customers (not just search results)
+      const totalStats = await fetchTotalBalanceStats();
+
+      // Update stats with search data + total balance stats
+      setStats({
+        ...processedData.stats,
+        totalPastDueBalance: totalStats.totalPastDueBalance,
+        totalNotDueBalance: totalStats.totalNotDueBalance,
+        totalBalance: totalStats.totalBalance
+      });
 
       // Fetch last note dates for search results
       if (processedData.filteredBalances.length > 0) {
@@ -767,6 +775,112 @@ const PaymentList = () => {
     };
   };
 
+  // Calculate total balance statistics for all user's customers (not just current page)
+  const fetchTotalBalanceStats = async () => {
+    try {
+      const assignedIds = await getAssignedCustomerIds();
+      console.log(`PaymentList Stats: Calculating totals for ${assignedIds.length} customers`);
+
+      let totalPastDueBalance = 0;
+      let totalNotDueBalance = 0;
+      let totalBalance = 0;
+
+      // Apply access filter with chunking for stats
+      if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+        const CHUNK_SIZE = 200;
+
+        if (assignedIds.length > CHUNK_SIZE) {
+          // Process in chunks
+          for (let i = 0; i < assignedIds.length; i += CHUNK_SIZE) {
+            const chunk = assignedIds.slice(i, i + CHUNK_SIZE);
+            console.log(`PaymentList Stats: Processing chunk ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(assignedIds.length / CHUNK_SIZE)}`);
+
+            const { data: chunkData, error: chunkError } = await supabase
+              .from('customer_balances')
+              .select('past_due_balance, not_due_balance, total_balance')
+              .in('customer_id', chunk);
+
+            if (chunkError) {
+              console.error(`PaymentList Stats: Chunk error:`, chunkError);
+              throw chunkError;
+            }
+
+            if (chunkData) {
+              chunkData.forEach(balance => {
+                const pastDue = parseFloat(balance.past_due_balance || 0);
+                const notDue = parseFloat(balance.not_due_balance || 0);
+                const total = parseFloat(balance.total_balance || 0) || (pastDue + notDue);
+
+                totalPastDueBalance += pastDue;
+                totalNotDueBalance += notDue;
+                totalBalance += total;
+              });
+            }
+          }
+        } else {
+          // Small list, use normal query
+          const { data, error } = await supabase
+            .from('customer_balances')
+            .select('past_due_balance, not_due_balance, total_balance')
+            .in('customer_id', assignedIds);
+
+          if (error) throw error;
+
+          if (data) {
+            data.forEach(balance => {
+              const pastDue = parseFloat(balance.past_due_balance || 0);
+              const notDue = parseFloat(balance.not_due_balance || 0);
+              const total = parseFloat(balance.total_balance || 0) || (pastDue + notDue);
+
+              totalPastDueBalance += pastDue;
+              totalNotDueBalance += notDue;
+              totalBalance += total;
+            });
+          }
+        }
+      } else if (!isAdmin && !isMuhasebe) {
+        // No customers assigned
+        console.log(`PaymentList Stats: No customers assigned`);
+      } else {
+        // Admin/muhasebe - get all customer balances
+        console.log(`PaymentList Stats: Admin/muhasebe - calculating all customer totals`);
+        const { data, error } = await supabase
+          .from('customer_balances')
+          .select('past_due_balance, not_due_balance, total_balance');
+
+        if (error) throw error;
+
+        if (data) {
+          data.forEach(balance => {
+            const pastDue = parseFloat(balance.past_due_balance || 0);
+            const notDue = parseFloat(balance.not_due_balance || 0);
+            const total = parseFloat(balance.total_balance || 0) || (pastDue + notDue);
+
+            totalPastDueBalance += pastDue;
+            totalNotDueBalance += notDue;
+            totalBalance += total;
+          });
+        }
+      }
+
+      console.log(`PaymentList Stats: Final totals - Past Due: ${totalPastDueBalance}, Not Due: ${totalNotDueBalance}, Total: ${totalBalance}`);
+
+      return {
+        totalPastDueBalance,
+        totalNotDueBalance,
+        totalBalance
+      };
+
+    } catch (err) {
+      console.error("Total balance stats error:", err);
+      return {
+        totalPastDueBalance: 0,
+        totalNotDueBalance: 0,
+        totalBalance: 0
+      };
+    }
+  };
+
   // Get total count of customer balances for pagination
   const fetchCustomerBalanceCount = async () => {
     try {
@@ -933,8 +1047,16 @@ const PaymentList = () => {
       setBalances(processedData.filteredBalances);
       setAllRecords(data || []); // Store raw data for export
 
-      // Update stats
-      setStats(processedData.stats);
+      // Get total balance stats for all customers (not just current page)
+      const totalStats = await fetchTotalBalanceStats();
+
+      // Update stats with page data + total balance stats
+      setStats({
+        ...processedData.stats,
+        totalPastDueBalance: totalStats.totalPastDueBalance,
+        totalNotDueBalance: totalStats.totalNotDueBalance,
+        totalBalance: totalStats.totalBalance
+      });
 
       // Fetch last note dates
       if (processedData.filteredBalances.length > 0) {
@@ -1075,8 +1197,16 @@ const PaymentList = () => {
       setBalances(processedData.filteredBalances);
       setAllRecords(data || []);
 
-      // Update stats
-      setStats(processedData.stats);
+      // Get total balance stats for all customers (not just current page)
+      const totalStats = await fetchTotalBalanceStats();
+
+      // Update stats with filtered data + total balance stats
+      setStats({
+        ...processedData.stats,
+        totalPastDueBalance: totalStats.totalPastDueBalance,
+        totalNotDueBalance: totalStats.totalNotDueBalance,
+        totalBalance: totalStats.totalBalance
+      });
 
       // For filtered data, set pagination to show all results on one page
       setPagination({
