@@ -53,21 +53,26 @@ const AccessDebug = () => {
         .select(`
           id,
           customer_id,
-          created_at,
-          customers (
-            id,
-            code,
-            name,
-            sector_code,
-            region_code
-          )
+          created_at
         `)
         .eq('user_id', selectedUser);
 
       if (assignmentError) throw assignmentError;
 
-      // 3. Atanmış müşterilerin bakiye bilgilerini al
+      // 2.5. Müşteri bilgilerini al
       const customerIds = assignments.map(a => a.customer_id);
+      let customers = [];
+      if (customerIds.length > 0) {
+        const { data: customerData, error: customerError } = await supabase
+          .from('customers')
+          .select('id, code, name, sector_code, region_code')
+          .in('id', customerIds);
+
+        if (customerError) throw customerError;
+        customers = customerData || [];
+      }
+
+      // 3. Atanmış müşterilerin bakiye bilgilerini al
       let balances = [];
       if (customerIds.length > 0) {
         const { data: balanceData, error: balanceError } = await supabase
@@ -86,41 +91,55 @@ const AccessDebug = () => {
 
       if (countError) throw countError;
 
-      // 5. Son giriş bilgisi (eğer varsa)
-      const { data: loginLogs, error: loginError } = await supabase
-        .from('login_logs')
-        .select('*')
-        .eq('user_id', selectedUser)
-        .order('login_time', { ascending: false })
-        .limit(5);
-
-      // Login hatası önemli değil, tablo olmayabilir
+      // 5. Son giriş bilgisi (şimdilik devre dışı)
+      const loginLogs = [];
 
       // 6. Kullanıcının notlarını al
-      const { data: notes, error: notesError } = await supabase
-        .from('customer_notes')
-        .select(`
-          id,
-          customer_id,
-          note_content,
-          created_at,
-          customers (
-            code,
-            name
-          )
-        `)
-        .eq('created_by', selectedUser)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      let notes = [];
+      try {
+        const { data: notesData, error: notesError } = await supabase
+          .from('customer_notes')
+          .select(`
+            id,
+            customer_id,
+            note_content,
+            created_at
+          `)
+          .eq('created_by', selectedUser)
+          .order('created_at', { ascending: false })
+          .limit(10);
 
-      // Not hatası da önemli değil
+        if (!notesError) {
+          notes = notesData || [];
+        }
+      } catch (err) {
+        console.log('Not verileri alınamadı:', err);
+      }
+
+      // Müşteri verilerini notlara eşle
+      const notesWithCustomers = notes.map(note => {
+        const customer = customers.find(c => c.id === note.customer_id);
+        return {
+          ...note,
+          customers: customer || null
+        };
+      });
+
+      // Atama verilerini müşteri bilgileriyle birleştir
+      const assignmentsWithCustomers = assignments.map(assignment => {
+        const customer = customers.find(c => c.id === assignment.customer_id);
+        return {
+          ...assignment,
+          customers: customer || null
+        };
+      });
 
       // Sonuçları birleştir
       const results = {
         userProfile,
-        assignments: assignments || [],
+        assignments: assignmentsWithCustomers,
         balances: balances || [],
-        notes: notes || [],
+        notes: notesWithCustomers,
         loginLogs: loginLogs || [],
         totalCustomers,
         stats: {

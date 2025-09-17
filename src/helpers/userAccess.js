@@ -165,14 +165,10 @@ export const useUserAccess = () => {
 
   // Kullanıcının erişebileceği müşteri verilerini filtrele
   const filterCustomersByAccess = useCallback(async (queryBuilder) => {
-    if (loading) {
-      console.log('filterCustomersByAccess - Henüz yükleniyor, bekleyin');
-      return queryBuilder.filter('id', 'eq', '00000000-0000-0000-0000-000000000000');
-    }
-    
+    // Loading kontrolünü kaldırdık - direct query yapacağız
     if (!user) {
       console.log('filterCustomersByAccess - Kullanıcı oturumu yok, boş sonuç döndürülüyor');
-      return queryBuilder.filter('id', 'eq', '00000000-0000-0000-0000-000000000000');
+      return queryBuilder.limit(0);
     }
     
     // Yönetici ve muhasebe tüm müşterilere erişebilir - Filtreleme uygulanmaz
@@ -199,9 +195,8 @@ export const useUserAccess = () => {
     
     if (assignedIds.length === 0) {
       // Hiç atanmış müşteri yoksa boş sonuç döndür
-      // Supabase'de hiçbir sonuç vermeyecek bir koşul ekle
       console.log('filterCustomersByAccess - Atanmış müşteri yok, boş sonuç döndürülüyor');
-      return queryBuilder.filter('id', 'eq', '00000000-0000-0000-0000-000000000000');
+      return queryBuilder.limit(0);
     }
     
     // Sadece atanmış müşterileri getir

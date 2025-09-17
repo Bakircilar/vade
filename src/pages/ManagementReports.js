@@ -71,17 +71,7 @@ const ManagementReports = () => {
           created_by,
           created_at,
           customer_id,
-          note_content,
-          customers (
-            name,
-            code,
-            sector_code,
-            region_code
-          ),
-          profiles (
-            full_name,
-            role
-          )
+          note_content
         `)
         .gte('created_at', start.toISOString())
         .lte('created_at', end.toISOString())
@@ -89,30 +79,8 @@ const ManagementReports = () => {
 
       if (notesError) throw notesError;
 
-      // 3. Login aktiviteleri (varsa)
+      // 3. Login aktiviteleri (şimdilik devre dışı)
       let loginLogs = [];
-      try {
-        const { data: loginData, error: loginError } = await supabase
-          .from('login_logs')
-          .select(`
-            id,
-            user_id,
-            login_time,
-            profiles (
-              full_name,
-              role
-            )
-          `)
-          .gte('login_time', start.toISOString())
-          .lte('login_time', end.toISOString())
-          .order('login_time', { ascending: false });
-
-        if (!loginError) {
-          loginLogs = loginData || [];
-        }
-      } catch (err) {
-        console.log('Login logs tablosu bulunamadı');
-      }
 
       // 4. Kullanıcı atamaları
       const { data: assignments, error: assignmentError } = await supabase
@@ -120,17 +88,7 @@ const ManagementReports = () => {
         .select(`
           user_id,
           customer_id,
-          created_at,
-          customers (
-            id,
-            name,
-            code,
-            sector_code
-          ),
-          profiles (
-            full_name,
-            role
-          )
+          created_at
         `);
 
       if (assignmentError) throw assignmentError;
@@ -148,8 +106,48 @@ const ManagementReports = () => {
 
       if (balanceError) throw balanceError;
 
+      // Müşteri bilgilerini al
+      let notesWithCustomers = notes;
+      if (notes.length > 0) {
+        const noteCustomerIds = [...new Set(notes.map(n => n.customer_id))];
+        const { data: noteCustomers, error: noteCustomerError } = await supabase
+          .from('customers')
+          .select('id, name, code, sector_code, region_code')
+          .in('id', noteCustomerIds);
+
+        if (!noteCustomerError && noteCustomers) {
+          notesWithCustomers = notes.map(note => {
+            const customer = noteCustomers.find(c => c.id === note.customer_id);
+            return {
+              ...note,
+              customers: customer || null
+            };
+          });
+        }
+      }
+
+      // Kullanıcı bilgilerini al
+      let notesWithUsers = notesWithCustomers;
+      if (notesWithCustomers.length > 0) {
+        const userIds = [...new Set(notesWithCustomers.map(n => n.created_by))];
+        const { data: noteUsers, error: noteUserError } = await supabase
+          .from('profiles')
+          .select('id, full_name, role')
+          .in('id', userIds);
+
+        if (!noteUserError && noteUsers) {
+          notesWithUsers = notesWithCustomers.map(note => {
+            const user = noteUsers.find(u => u.id === note.created_by);
+            return {
+              ...note,
+              profiles: user || null
+            };
+          });
+        }
+      }
+
       // Verileri işle
-      const processedData = processManagementData(users, notes, loginLogs, assignments, balances, start, end);
+      const processedData = processManagementData(users, notesWithUsers, loginLogs, assignments, balances, start, end);
       setManagementData(processedData);
 
     } catch (error) {

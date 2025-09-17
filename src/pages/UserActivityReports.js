@@ -90,14 +90,7 @@ const UserActivityReports = () => {
           created_by,
           created_at,
           customer_id,
-          customers (
-            name,
-            code,
-            sector_code
-          ),
-          profiles (
-            full_name
-          )
+          note_content
         `)
         .gte('created_at', start.toISOString())
         .lte('created_at', end.toISOString());
@@ -110,34 +103,8 @@ const UserActivityReports = () => {
 
       if (notesError) throw notesError;
 
-      // 2. Login aktiviteleri (eğer tablo varsa)
+      // 2. Login aktiviteleri (bu özellik şimdilik devre dışı)
       let loginLogs = [];
-      try {
-        let loginQuery = supabase
-          .from('login_logs')
-          .select(`
-            id,
-            user_id,
-            login_time,
-            profiles (
-              full_name
-            )
-          `)
-          .gte('login_time', start.toISOString())
-          .lte('login_time', end.toISOString());
-
-        if (userFilter) {
-          loginQuery = loginQuery.eq('user_id', userFilter);
-        }
-
-        const { data: loginData, error: loginError } = await loginQuery.order('login_time', { ascending: false });
-
-        if (!loginError) {
-          loginLogs = loginData || [];
-        }
-      } catch (err) {
-        console.log('Login logs tablosu bulunamadı, atlanıyor');
-      }
 
       // 3. Kullanıcı atamaları
       let assignments = [];
@@ -147,12 +114,7 @@ const UserActivityReports = () => {
           .select(`
             id,
             customer_id,
-            created_at,
-            customers (
-              name,
-              code,
-              sector_code
-            )
+            created_at
           `)
           .eq('user_id', userFilter);
 
@@ -163,34 +125,53 @@ const UserActivityReports = () => {
 
       // 4. Müşteri balans özeti
       let balanceStats = null;
-      if (userFilter) {
-        const { data: userBalances, error: balanceError } = await supabase
-          .from('customer_balances')
-          .select(`
-            total_balance,
-            past_due_balance,
-            not_due_balance,
-            customers!inner (
-              id
-            ),
-            user_customer_assignments!inner (
-              user_id
-            )
-          `)
-          .eq('user_customer_assignments.user_id', userFilter);
+      if (userFilter && assignments.length > 0) {
+        try {
+          const customerIds = assignments.map(a => a.customer_id);
+          const { data: userBalances, error: balanceError } = await supabase
+            .from('customer_balances')
+            .select(`
+              total_balance,
+              past_due_balance,
+              not_due_balance
+            `)
+            .in('customer_id', customerIds);
 
-        if (!balanceError && userBalances) {
-          balanceStats = {
-            totalCustomers: userBalances.length,
-            totalBalance: userBalances.reduce((sum, b) => sum + (parseFloat(b.total_balance) || 0), 0),
-            pastDueBalance: userBalances.reduce((sum, b) => sum + (parseFloat(b.past_due_balance) || 0), 0),
-            notDueBalance: userBalances.reduce((sum, b) => sum + (parseFloat(b.not_due_balance) || 0), 0)
-          };
+          if (!balanceError && userBalances) {
+            balanceStats = {
+              totalCustomers: userBalances.length,
+              totalBalance: userBalances.reduce((sum, b) => sum + (parseFloat(b.total_balance) || 0), 0),
+              pastDueBalance: userBalances.reduce((sum, b) => sum + (parseFloat(b.past_due_balance) || 0), 0),
+              notDueBalance: userBalances.reduce((sum, b) => sum + (parseFloat(b.not_due_balance) || 0), 0)
+            };
+          }
+        } catch (err) {
+          console.log('Bakiye verileri alınamadı:', err);
+        }
+      }
+
+      // Müşteri bilgilerini notlara eşle
+      let notesWithCustomers = notes;
+      if (notes.length > 0) {
+        const noteCustomerIds = [...new Set(notes.map(n => n.customer_id))];
+        const { data: noteCustomers, error: noteCustomerError } = await supabase
+          .from('customers')
+          .select('id, name, code, sector_code')
+          .in('id', noteCustomerIds);
+
+        if (!noteCustomerError && noteCustomers) {
+          notesWithCustomers = notes.map(note => {
+            const customer = noteCustomers.find(c => c.id === note.customer_id);
+            return {
+              ...note,
+              customers: customer || null
+            };
+          });
         }
       }
 
       // Verileri işle ve analiz et
-      const processedData = processReportData(notes, loginLogs, assignments, balanceStats, start, end);
+      const processedData = processReportData(notesWithCustomers, loginLogs, assignments, balanceStats, start, end);
       setReportData(processedData);
 
     } catch (error) {
