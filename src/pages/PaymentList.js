@@ -776,8 +776,13 @@ const PaymentList = () => {
         .from('customer_balances')
         .select('*', { count: 'exact', head: true });
 
-      // Apply access filter
+      // Apply access filter with chunking for count
       if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+        // For count queries, if we have too many IDs, just return a rough estimate
+        if (assignedIds.length > 1000) {
+          console.log(`PaymentList Count: Too many IDs (${assignedIds.length}), returning estimate`);
+          return assignedIds.length; // Rough estimate
+        }
         query = query.in('customer_id', assignedIds);
       } else if (!isAdmin && !isMuhasebe) {
         query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
@@ -796,10 +801,17 @@ const PaymentList = () => {
 
   // Fetch customer balances by page
   const fetchCustomerBalancesPage = async (page = 0, pageSize = pagination.pageSize) => {
+    console.log(`PaymentList: fetchCustomerBalancesPage called - page: ${page}, pageSize: ${pageSize}`);
     setLoading(true);
     try {
+      // Get assigned IDs first
+      const assignedIds = await getAssignedCustomerIds();
+      console.log(`PaymentList: Got ${assignedIds.length} assigned customer IDs`);
+
       // Get total count first
+      console.log(`PaymentList: Fetching customer balance count...`);
       const totalCount = await fetchCustomerBalanceCount();
+      console.log(`PaymentList: Total count: ${totalCount}`);
       const totalPages = Math.ceil(totalCount / pageSize);
 
       // Update pagination
@@ -836,10 +848,15 @@ const PaymentList = () => {
       if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
         // If too many IDs, chunk them to avoid URL length issues
         const CHUNK_SIZE = 200; // Safe limit for URL length
+        console.log(`PaymentList: Processing ${assignedIds.length} customer IDs`);
+
         if (assignedIds.length > CHUNK_SIZE) {
+          console.log(`PaymentList: Using chunking with ${Math.ceil(assignedIds.length / CHUNK_SIZE)} chunks`);
           // Process in chunks
           for (let i = 0; i < assignedIds.length; i += CHUNK_SIZE) {
             const chunk = assignedIds.slice(i, i + CHUNK_SIZE);
+            console.log(`PaymentList: Processing chunk ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(assignedIds.length / CHUNK_SIZE)} with ${chunk.length} IDs`);
+
             const chunkQuery = supabase
               .from('customer_balances')
               .select(`
@@ -855,14 +872,17 @@ const PaymentList = () => {
             const { data: chunkData, error: chunkError } = await chunkQuery;
 
             if (chunkError) {
+              console.error(`PaymentList: Chunk ${Math.floor(i / CHUNK_SIZE) + 1} error:`, chunkError);
               error = chunkError;
               break;
             }
 
+            console.log(`PaymentList: Chunk ${Math.floor(i / CHUNK_SIZE) + 1} returned ${chunkData?.length || 0} records`);
             if (chunkData) {
               data = [...data, ...chunkData];
             }
           }
+          console.log(`PaymentList: Chunking completed. Total records: ${data.length}`);
         } else {
           // Small list, use normal query
           query = query.in('customer_id', assignedIds);
@@ -1059,11 +1079,14 @@ const PaymentList = () => {
 
   // Legacy fetchData function for backward compatibility
   const fetchData = async (force = false) => {
+    console.log(`PaymentList: fetchData called - filterType: ${filterType}, force: ${force}`);
     if (filterType === 'upcoming' || filterType === 'overdue') {
       // Use filter-specific loading for filtered views
+      console.log(`PaymentList: Using fetchFilteredData for ${filterType}`);
       fetchFilteredData();
     } else {
       // Use paginated loading for 'all' view
+      console.log(`PaymentList: Using fetchCustomerBalancesPage for 'all' view`);
       fetchCustomerBalancesPage(0);
     }
   };
