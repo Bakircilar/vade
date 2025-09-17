@@ -396,9 +396,11 @@ const PaymentList = () => {
   const handleSearch = async (value) => {
     setSearchTerm(value);
 
-    if (!value.trim()) {
-      // If search term is empty, return to normal pagination
-      fetchData(true);
+    if (!value.trim() || value.trim().length < 3) {
+      // If search term is empty or less than 3 characters, return to normal pagination
+      if (!value.trim()) {
+        fetchData(true);
+      }
       return;
     }
 
@@ -1432,7 +1434,8 @@ const PaymentList = () => {
           <div>
             <p>
               <strong>Sayfa:</strong> {pagination.page + 1}/{pagination.totalPages} |
-              <strong> Gösterilen:</strong> {balances.length} / {pagination.pageSize} |
+              <strong> Gösterilen:</strong> {balances.length} |
+              <strong> Yüklenen:</strong> {allRecords.length} / {pagination.pageSize} |
               <strong> Toplam:</strong> {pagination.total} |
               <strong> Filtre:</strong> {
                 filterType === 'upcoming' ? 'Yaklaşanlar' :

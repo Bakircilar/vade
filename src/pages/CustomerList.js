@@ -204,9 +204,11 @@ const CustomerList = () => {
   const handleBasicSearch = async (value) => {
     setSearchTerm(value);
 
-    if (!value.trim()) {
-      // Arama terimi boşsa normal sayfalama ile geri dön
-      fetchCustomersPage(0);
+    if (!value.trim() || value.trim().length < 3) {
+      // Arama terimi boş veya 3 karakterden azsa normal sayfalama ile geri dön
+      if (!value.trim()) {
+        fetchCustomersPage(0);
+      }
       return;
     }
 
