@@ -1,0 +1,241 @@
+/* src/theme.css */
+:root {
+  /* Light tema değişkenleri (varsayılan) */
+  --background-color: #f5f5f5;
+  --card-background: #ffffff;
+  --text-color: #333333;
+  --text-secondary: #666666;
+  --border-color: #dddddd;
+  --highlight-color: #3498db;
+  --success-color: #2ecc71;
+  --warning-color: #f39c12;
+  --danger-color: #e74c3c;
+  --info-color: #3498db;
+  --hover-color: #f0f0f0;
+  
+  /* Geçiş efekti */
+  --transition-time: 0.3s;
+}
+
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  transition: background-color var(--transition-time), color var(--transition-time);
+}
+
+.app {
+  background-color: var(--background-color);
+  color: var(--text-color);
+  transition: background-color var(--transition-time), color var(--transition-time);
+}
+
+.container {
+  background-color: var(--background-color);
+}
+
+.card {
+  background-color: var(--card-background);
+  border-color: var(--border-color);
+  color: var(--text-color);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: background-color var(--transition-time), color var(--transition-time), border-color var(--transition-time);
+}
+
+table th, table td {
+  border-color: var(--border-color);
+  color: var(--text-color);
+  transition: border-color var(--transition-time), color var(--transition-time);
+}
+
+table th {
+  background-color: var(--hover-color);
+}
+
+/* Butonlar */
+.btn {
+  transition: background-color var(--transition-time), color var(--transition-time);
+}
+
+.btn-primary {
+  background-color: var(--highlight-color);
+}
+
+.btn-success {
+  background-color: var(--success-color);
+}
+
+.btn-danger {
+  background-color: var(--danger-color);
+}
+
+.btn-warning {
+  background-color: var(--warning-color);
+}
+
+/* Form elemanları */
+input, select, textarea {
+  background-color: var(--card-background);
+  color: var(--text-color);
+  border-color: var(--border-color);
+  transition: background-color var(--transition-time), color var(--transition-time), border-color var(--transition-time);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--highlight-color);
+}
+
+/* Tema değiştirme butonu */
+.theme-toggle-btn {
+  padding: 5px 10px;
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color);
+  transition: background-color var(--transition-time), color var(--transition-time);
+}
+
+.theme-toggle-btn:hover {
+  background-color: var(--hover-color);
+}
+
+/* Navigasyon */
+nav {
+  background-color: var(--card-background);
+  border-color: var(--border-color);
+  transition: background-color var(--transition-time), border-color var(--transition-time);
+}
+
+/* Header */
+header {
+  background-color: var(--card-background);
+  border-color: var(--border-color);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: background-color var(--transition-time), border-color var(--transition-time);
+}
+
+/* Badge renkleri */
+.badge-warning {
+  background-color: var(--warning-color);
+  color: white;
+}
+
+.badge-danger {
+  background-color: var(--danger-color);
+  color: white;
+}
+
+.badge-success {
+  background-color: var(--success-color);
+  color: white;
+}
+
+.badge-info {
+  background-color: var(--info-color);
+  color: white;
+}
+
+/* Koyu temada tablo gövdesi satırları için hover efekti */
+.dark-theme table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.light-theme table tbody tr:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+/* Link renkleri */
+a {
+  color: var(--highlight-color);
+  transition: color var(--transition-time);
+}
+
+a:hover {
+  color: var(--highlight-color);
+  opacity: 0.8;
+}
+
+/* Özel bileşenler için tema desteği */
+.timeline-item-content {
+  background-color: var(--card-background);
+  color: var(--text-color);
+  border-color: var(--border-color);
+  transition: background-color var(--transition-time), color var(--transition-time), border-color var(--transition-time);
+}
+
+/* Bildirim merkezi */
+.notification-dropdown {
+  background-color: var(--card-background);
+  border-color: var(--border-color);
+  color: var(--text-color);
+  transition: background-color var(--transition-time), color var(--transition-time), border-color var(--transition-time);
+}
+
+.notification-header {
+  border-bottom-color: var(--border-color);
+}
+
+.notification-list li {
+  border-bottom-color: var(--border-color);
+}
+
+.notification-list li:hover {
+  background-color: var(--hover-color);
+}
+
+.notification-footer {
+  border-top-color: var(--border-color);
+}
+
+/* Sekmeler */
+.tab-button {
+  color: var(--text-color);
+  transition: color var(--transition-time);
+}
+
+.tab-button.active {
+  color: var(--highlight-color);
+  border-bottom-color: var(--highlight-color);
+}
+
+/* Sayfalama */
+.pagination {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.pagination-btn {
+  padding: 5px 10px;
+  margin: 0 5px;
+  background-color: var(--card-background);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: background-color var(--transition-time), color var(--transition-time);
+}
+
+.pagination-btn:hover:not([disabled]) {
+  background-color: var(--hover-color);
+}
+
+.pagination-btn.active {
+  background-color: var(--highlight-color);
+  color: white;
+  border-color: var(--highlight-color);
+}
+
+.pagination-btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Tablo boş durum mesajları */
+.empty-message {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 20px;
+}
