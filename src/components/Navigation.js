@@ -134,7 +134,7 @@ const Navigation = ({ userRole, isMuhasebe, isMenuOpen, closeMenu }) => {
             Veri İçe Aktar
           </NavLink>
         )}
-        
+
         {/* Raporlar Bölümü */}
         <div style={sectionStyle}>
           <div style={sectionTitleStyle}>Raporlar</div>
