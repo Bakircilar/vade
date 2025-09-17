@@ -829,14 +829,58 @@ const PaymentList = () => {
         .range(from, to)
         .order('customer_id');
 
-      // Apply access filter
+      let data = [];
+      let error = null;
+
+      // Apply access filter with chunking for large ID lists
       if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
-        query = query.in('customer_id', assignedIds);
+        // If too many IDs, chunk them to avoid URL length issues
+        const CHUNK_SIZE = 200; // Safe limit for URL length
+        if (assignedIds.length > CHUNK_SIZE) {
+          // Process in chunks
+          for (let i = 0; i < assignedIds.length; i += CHUNK_SIZE) {
+            const chunk = assignedIds.slice(i, i + CHUNK_SIZE);
+            const chunkQuery = supabase
+              .from('customer_balances')
+              .select(`
+                *,
+                customers (
+                  id, name, code, sector_code
+                )
+              `)
+              .range(from, to)
+              .in('customer_id', chunk)
+              .order('customer_id');
+
+            const { data: chunkData, error: chunkError } = await chunkQuery;
+
+            if (chunkError) {
+              error = chunkError;
+              break;
+            }
+
+            if (chunkData) {
+              data = [...data, ...chunkData];
+            }
+          }
+        } else {
+          // Small list, use normal query
+          query = query.in('customer_id', assignedIds);
+          const { data: queryData, error: queryError } = await query;
+          data = queryData;
+          error = queryError;
+        }
       } else if (!isAdmin && !isMuhasebe) {
         query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
+        const { data: queryData, error: queryError } = await query;
+        data = queryData;
+        error = queryError;
+      } else {
+        // Admin/muhasebe - no filter needed
+        const { data: queryData, error: queryError } = await query;
+        data = queryData;
+        error = queryError;
       }
-
-      const { data, error } = await query;
 
       if (error) throw error;
 
@@ -881,46 +925,104 @@ const PaymentList = () => {
           )
         `);
 
-      // Apply access filter
-      if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
-        query = query.in('customer_id', assignedIds);
-      } else if (!isAdmin && !isMuhasebe) {
-        query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
-      }
+      // Build base query conditions first
+      const baseConditions = [];
+      let orderField = 'customer_id';
 
-      // Apply filter-specific conditions
+      // Apply filter-specific conditions first
       if (filterType === 'upcoming') {
-        // For upcoming payments, load all data with not_due_date in range
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         const futureDate = addDays(today, dateRange);
 
-        query = query
-          .not('not_due_date', 'is', null)
-          .gte('not_due_date', today.toISOString())
-          .lte('not_due_date', futureDate.toISOString())
-          .gt('not_due_balance', VadeHelper.MIN_BALANCE);
+        baseConditions.push(
+          q => q.not('not_due_date', 'is', null)
+            .gte('not_due_date', today.toISOString())
+            .lte('not_due_date', futureDate.toISOString())
+            .gt('not_due_balance', VadeHelper.MIN_BALANCE)
+        );
+        orderField = 'not_due_date';
       } else if (filterType === 'overdue') {
-        // For overdue payments, load all data with past_due_date < today
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        query = query
-          .not('past_due_date', 'is', null)
-          .lt('past_due_date', today.toISOString())
-          .gt('past_due_balance', VadeHelper.MIN_BALANCE);
+        baseConditions.push(
+          q => q.not('past_due_date', 'is', null)
+            .lt('past_due_date', today.toISOString())
+            .gt('past_due_balance', VadeHelper.MIN_BALANCE)
+        );
+        orderField = 'past_due_date';
       }
 
-      // Order by appropriate field
-      if (filterType === 'upcoming') {
-        query = query.order('not_due_date');
-      } else if (filterType === 'overdue') {
-        query = query.order('past_due_date');
+      let data = [];
+      let error = null;
+
+      // Apply access filter with chunking for large ID lists
+      if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+        const CHUNK_SIZE = 200;
+        if (assignedIds.length > CHUNK_SIZE) {
+          // Process in chunks
+          for (let i = 0; i < assignedIds.length; i += CHUNK_SIZE) {
+            const chunk = assignedIds.slice(i, i + CHUNK_SIZE);
+            let chunkQuery = supabase
+              .from('customer_balances')
+              .select(`
+                *,
+                customers (
+                  id, name, code, sector_code
+                )
+              `)
+              .in('customer_id', chunk);
+
+            // Apply base conditions
+            baseConditions.forEach(condition => {
+              chunkQuery = condition(chunkQuery);
+            });
+
+            // Apply ordering
+            chunkQuery = chunkQuery.order(orderField);
+
+            const { data: chunkData, error: chunkError } = await chunkQuery;
+
+            if (chunkError) {
+              error = chunkError;
+              break;
+            }
+
+            if (chunkData) {
+              data = [...data, ...chunkData];
+            }
+          }
+        } else {
+          // Small list, use normal query
+          query = query.in('customer_id', assignedIds);
+          baseConditions.forEach(condition => {
+            query = condition(query);
+          });
+          query = query.order(orderField);
+          const { data: queryData, error: queryError } = await query;
+          data = queryData;
+          error = queryError;
+        }
+      } else if (!isAdmin && !isMuhasebe) {
+        query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
+        baseConditions.forEach(condition => {
+          query = condition(query);
+        });
+        query = query.order(orderField);
+        const { data: queryData, error: queryError } = await query;
+        data = queryData;
+        error = queryError;
       } else {
-        query = query.order('customer_id');
+        // Admin/muhasebe - no customer filter needed
+        baseConditions.forEach(condition => {
+          query = condition(query);
+        });
+        query = query.order(orderField);
+        const { data: queryData, error: queryError } = await query;
+        data = queryData;
+        error = queryError;
       }
-
-      const { data, error } = await query;
 
       if (error) throw error;
 
