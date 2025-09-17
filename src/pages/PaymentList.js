@@ -1488,68 +1488,6 @@ const PaymentList = () => {
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination controls */}
-            {!searchTerm.trim() && pagination.totalPages > 1 && (
-              <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                gap: '10px',
-                margin: '20px 0',
-                alignItems: 'center',
-                flexWrap: 'wrap'
-              }}>
-                <button
-                  onClick={() => handlePageChange(0)}
-                  disabled={pagination.page === 0 || loading}
-                  className="btn"
-                  title="İlk Sayfa"
-                >
-                  ««
-                </button>
-                <button
-                  onClick={() => handlePageChange(pagination.page - 1)}
-                  disabled={pagination.page === 0 || loading}
-                  className="btn"
-                  title="Önceki Sayfa"
-                >
-                  «
-                </button>
-
-                <span>
-                  Sayfa {pagination.page + 1} / {pagination.totalPages}
-                </span>
-
-                <button
-                  onClick={() => handlePageChange(pagination.page + 1)}
-                  disabled={pagination.page === pagination.totalPages - 1 || loading}
-                  className="btn"
-                  title="Sonraki Sayfa"
-                >
-                  »
-                </button>
-                <button
-                  onClick={() => handlePageChange(pagination.totalPages - 1)}
-                  disabled={pagination.page === pagination.totalPages - 1 || loading}
-                  className="btn"
-                  title="Son Sayfa"
-                >
-                  »»
-                </button>
-              </div>
-            )}
-
-            <div style={{ margin: '20px 0', textAlign: 'center' }}>
-              {loading ? (
-                <p>Yükleniyor...</p>
-              ) : (
-                <p>
-                  {searchTerm.trim() ?
-                    `${filteredBalances.length} kayıt bulundu` :
-                    `${filteredBalances.length} kayıt gösteriliyor (toplam ${pagination.total})`}
-                </p>
-              )}
-            </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>
               <p style={{ marginBottom: '20px' }}>
@@ -1570,6 +1508,68 @@ const PaymentList = () => {
               )}
             </div>
           )}
+
+          {/* Pagination controls */}
+          {!searchTerm.trim() && pagination.totalPages > 1 && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              gap: '10px',
+              margin: '20px 0',
+              alignItems: 'center',
+              flexWrap: 'wrap'
+            }}>
+              <button
+                onClick={() => handlePageChange(0)}
+                disabled={pagination.page === 0 || loading}
+                className="btn"
+                title="İlk Sayfa"
+              >
+                ««
+              </button>
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={pagination.page === 0 || loading}
+                className="btn"
+                title="Önceki Sayfa"
+              >
+                «
+              </button>
+
+              <span>
+                Sayfa {pagination.page + 1} / {pagination.totalPages}
+              </span>
+
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={pagination.page === pagination.totalPages - 1 || loading}
+                className="btn"
+                title="Sonraki Sayfa"
+              >
+                »
+              </button>
+              <button
+                onClick={() => handlePageChange(pagination.totalPages - 1)}
+                disabled={pagination.page === pagination.totalPages - 1 || loading}
+                className="btn"
+                title="Son Sayfa"
+              >
+                »»
+              </button>
+            </div>
+          )}
+
+          <div style={{ margin: '20px 0', textAlign: 'center' }}>
+            {loading ? (
+              <p>Yükleniyor...</p>
+            ) : (
+              <p>
+                {searchTerm.trim() ?
+                  `${filteredBalances.length} kayıt bulundu` :
+                  `${filteredBalances.length} kayıt gösteriliyor (toplam ${pagination.total})`}
+              </p>
+            )}
+          </div>
         </div>
       )}
 

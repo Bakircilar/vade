@@ -10,7 +10,8 @@
       "Bash(cmdkey:*)",
       "Bash(findstr:*)",
       "Bash(git pull:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []
