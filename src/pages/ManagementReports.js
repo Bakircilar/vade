@@ -70,7 +70,8 @@ const ManagementReports = () => {
           id,
           created_at,
           customer_id,
-          note_content
+          note_content,
+          created_by
         `)
         .gte('created_at', start.toISOString())
         .lte('created_at', end.toISOString())
@@ -210,11 +211,6 @@ const ManagementReports = () => {
       .sort((a, b) => b.activityScore - a.activityScore)
       .slice(0, 5);
 
-    // En az aktif kullanıcıları bul
-    const leastActive = [...userPerformance]
-      .filter(u => u.role !== 'admin') // Admin'leri hariç tut
-      .sort((a, b) => a.activityScore - b.activityScore)
-      .slice(0, 5);
 
 
     // Günlük aktivite trendi
@@ -295,7 +291,6 @@ const ManagementReports = () => {
       },
       userPerformance,
       topPerformers,
-      leastActive,
       dailyTrend: Object.values(dailyTrend).map(day => ({
         ...day,
         activeUsers: day.users.size
@@ -478,7 +473,7 @@ const ManagementReports = () => {
           {/* En iyi performans gösteren kullanıcılar */}
           <div className="card" style={{ marginBottom: '20px' }}>
             <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '15px' }}>
-              🏆 En İyi Performans Gösteren Kullanıcılar
+              📝 Kullanıcı Notları
             </h3>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -566,60 +561,6 @@ const ManagementReports = () => {
 
           {/* İki sütunlu alan */}
 
-          {/* Düşük performans gösteren kullanıcılar */}
-          {managementData.leastActive.length > 0 && (
-            <div className="card">
-              <h3 style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '15px' }}>
-                ⚠️ Dikkat Edilmesi Gereken Kullanıcılar
-              </h3>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ backgroundColor: '#fff3e0' }}>
-                    <tr>
-                      <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #dee2e6' }}>Kullanıcı</th>
-                      <th style={{ padding: '10px', textAlign: 'left', border: '1px solid #dee2e6' }}>Rol</th>
-                      <th style={{ padding: '10px', textAlign: 'center', border: '1px solid #dee2e6' }}>Not Sayısı</th>
-                      <th style={{ padding: '10px', textAlign: 'center', border: '1px solid #dee2e6' }}>Atanmış Müşteri</th>
-                      <th style={{ padding: '10px', textAlign: 'center', border: '1px solid #dee2e6' }}>Son Aktivite</th>
-                      <th style={{ padding: '10px', textAlign: 'center', border: '1px solid #dee2e6' }}>Durum</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {managementData.leastActive.map(user => (
-                      <tr key={user.id}>
-                        <td style={{ padding: '8px', border: '1px solid #dee2e6' }}>
-                          {user.name}
-                        </td>
-                        <td style={{ padding: '8px', border: '1px solid #dee2e6' }}>
-                          {user.role}
-                        </td>
-                        <td style={{ padding: '8px', border: '1px solid #dee2e6', textAlign: 'center' }}>
-                          {user.noteCount}
-                        </td>
-                        <td style={{ padding: '8px', border: '1px solid #dee2e6', textAlign: 'center' }}>
-                          {user.assignedCustomers}
-                        </td>
-                        <td style={{ padding: '8px', border: '1px solid #dee2e6', textAlign: 'center' }}>
-                          {formatDate(user.lastActivity)}
-                        </td>
-                        <td style={{ padding: '8px', border: '1px solid #dee2e6', textAlign: 'center' }}>
-                          <span style={{
-                            padding: '2px 6px',
-                            borderRadius: '3px',
-                            fontSize: '11px',
-                            color: 'white',
-                            backgroundColor: user.noteCount === 0 ? '#e74c3c' : user.daysSinceLastActivity > 7 ? '#f39c12' : '#95a5a6'
-                          }}>
-                            {user.noteCount === 0 ? 'Pasif' : user.daysSinceLastActivity > 7 ? 'Az Aktif' : 'Normal'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>
