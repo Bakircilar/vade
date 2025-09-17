@@ -431,9 +431,7 @@ const PaymentList = () => {
       const searchLower = value.toLowerCase().trim();
 
       // Use join with customers table and apply search directly
-      query = query
-        .not('customers.name', 'is', null) // Ensure customer exists
-        .or(`customers.name.ilike.%${searchLower}%,customers.code.ilike.%${searchLower}%,customers.sector_code.ilike.%${searchLower}%`);
+      query = query.or(`customers.name.ilike.%${searchLower}%,customers.code.ilike.%${searchLower}%,customers.sector_code.ilike.%${searchLower}%`);
 
       // Order by customer name
       query = query.order('customer_id');
@@ -1403,10 +1401,11 @@ const PaymentList = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
           <div>
             <p>
-              <strong>Yüklenen Kayıt:</strong> {stats.allRecordsCount} | 
-              <strong> Gösterilen:</strong> {filteredBalances.length} | 
+              <strong>Sayfa:</strong> {pagination.page + 1}/{pagination.totalPages} |
+              <strong> Gösterilen:</strong> {balances.length} / {pagination.pageSize} |
+              <strong> Toplam:</strong> {pagination.total} |
               <strong> Filtre:</strong> {
-                filterType === 'upcoming' ? 'Yaklaşanlar' : 
+                filterType === 'upcoming' ? 'Yaklaşanlar' :
                 filterType === 'overdue' ? 'Vadesi Geçmiş' : 'Tümü'
               }
               {filterType !== 'all' && <span className="badge badge-info" style={{ marginLeft: '5px' }}>Min: {VadeHelper.MIN_BALANCE}₺</span>}

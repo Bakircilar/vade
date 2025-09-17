@@ -217,12 +217,12 @@ const CustomerList = () => {
         .from('customers')
         .select('*');
 
-      // Erişim kontrolü
-      query = await filterCustomersByAccess(query);
-
       // Arama filtresi
       const searchLower = value.toLowerCase().trim();
       query = query.or(`name.ilike.%${searchLower}%,code.ilike.%${searchLower}%,sector_code.ilike.%${searchLower}%`);
+
+      // Erişim kontrolü
+      query = await filterCustomersByAccess(query);
 
       // Sıralama
       query = query.order('name');
