@@ -778,11 +778,38 @@ const PaymentList = () => {
 
       // Apply access filter with chunking for count
       if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
-        // For count queries, if we have too many IDs, just return a rough estimate
-        if (assignedIds.length > 1000) {
-          console.log(`PaymentList Count: Too many IDs (${assignedIds.length}), returning estimate`);
-          return assignedIds.length; // Rough estimate
+        // For count queries, if we have too many IDs, use chunking or estimate
+        if (assignedIds.length > 200) {
+          console.log(`PaymentList Count: Using chunked count for ${assignedIds.length} IDs`);
+
+          // Use chunking for count
+          let totalCount = 0;
+          const CHUNK_SIZE = 200;
+
+          for (let i = 0; i < assignedIds.length; i += CHUNK_SIZE) {
+            const chunk = assignedIds.slice(i, i + CHUNK_SIZE);
+            console.log(`PaymentList Count: Processing chunk ${Math.floor(i / CHUNK_SIZE) + 1}/${Math.ceil(assignedIds.length / CHUNK_SIZE)}`);
+
+            const chunkQuery = supabase
+              .from('customer_balances')
+              .select('*', { count: 'exact', head: true })
+              .in('customer_id', chunk);
+
+            const { count: chunkCount, error: chunkError } = await chunkQuery;
+
+            if (chunkError) {
+              console.error(`PaymentList Count: Chunk error:`, chunkError);
+              throw chunkError;
+            }
+
+            totalCount += (chunkCount || 0);
+            console.log(`PaymentList Count: Chunk count: ${chunkCount}, Total so far: ${totalCount}`);
+          }
+
+          console.log(`PaymentList Count: Final total count: ${totalCount}`);
+          return totalCount;
         }
+
         query = query.in('customer_id', assignedIds);
       } else if (!isAdmin && !isMuhasebe) {
         query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
