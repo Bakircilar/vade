@@ -327,7 +327,15 @@ const PaymentList = () => {
   const [dateRange, setDateRange] = useState(30); // Yaklaşan vadeler için 30 gün
   const [exporting, setExporting] = useState(false);
   const [searchTerm, setSearchTerm] = useState(''); // Arama terimi için state
-  
+
+  // Pagination state
+  const [pagination, setPagination] = useState({
+    page: 0,
+    pageSize: 100,
+    total: 0,
+    totalPages: 0
+  });
+
   // User access control
   const { isAdmin, isMuhasebe, getAssignedCustomerIds, loading: accessLoading } = useUserAccess();
   
@@ -384,9 +392,80 @@ const PaymentList = () => {
     setDateRange(days);
   };
 
-  // Arama fonksiyonu
-  const handleSearch = (e) => {
-    setSearchTerm(e.target.value);
+  // Database-level search function
+  const handleSearch = async (value) => {
+    setSearchTerm(value);
+
+    if (!value.trim()) {
+      // If search term is empty, return to normal pagination
+      fetchData(true);
+      return;
+    }
+
+    // Search in entire database
+    setLoading(true);
+    try {
+      console.log("Searching payments for:", value);
+
+      // Get user access control
+      const assignedIds = await getAssignedCustomerIds();
+
+      // Create query for search
+      let query = supabase
+        .from('customer_balances')
+        .select(`
+          *,
+          customers (
+            id, name, code, sector_code
+          )
+        `);
+
+      // Apply access filter - admin and muhasebe can see all
+      if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+        query = query.in('customer_id', assignedIds);
+      } else if (!isAdmin && !isMuhasebe) {
+        query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
+      }
+
+      // Apply search filter to customer data
+      const searchLower = value.toLowerCase().trim();
+      query = query.or(`customers.name.ilike.%${searchLower}%,customers.code.ilike.%${searchLower}%,customers.sector_code.ilike.%${searchLower}%`);
+
+      // Order by customer name
+      query = query.order('customer_id');
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Process the search results similar to fetchData
+      const processedData = await processBalanceData(data || []);
+      setBalances(processedData.filteredBalances);
+      setAllRecords(data || []);
+
+      // Reset pagination since it's search results
+      setPagination(prev => ({
+        ...prev,
+        page: 0,
+        total: processedData.filteredBalances.length,
+        totalPages: 1
+      }));
+
+      // Update stats
+      setStats(processedData.stats);
+
+      // Fetch last note dates for search results
+      if (processedData.filteredBalances.length > 0) {
+        const customerIds = processedData.filteredBalances.map(balance => balance.customer_id);
+        fetchLastNoteDates(customerIds);
+      }
+
+    } catch (err) {
+      console.error("Search error:", err);
+      toast.error("Arama sırasında hata oluştu");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Hızlı not modunu aç
@@ -490,310 +569,271 @@ const PaymentList = () => {
     }
   };
 
-  // Veri getirme fonksiyonu - KEY FIX - REMOVED initialLoadDone CHECK
-  const fetchData = async (force = false) => {
-    setLoading(true);
-    try {
-      console.log("Veri yükleniyor... Filtre tipi:", filterType);
-      
-      // Tüm verileri çekmek için sayfalama kullanın
-      let allData = [];
-      let page = 0;
-      const pageSize = 1000; // Her sayfada 1000 kayıt
-      let hasMoreData = true;
-
-      // Kullanıcıya atanmış müşteri ID'lerini al
-      const assignedIds = await getAssignedCustomerIds();
-      
-      console.log("Kullanıcı rolleri:", { isAdmin, isMuhasebe });
-      console.log("Atanmış müşteri ID'leri:", assignedIds);
-
-      while (hasMoreData) {
-        // Sayfa başlangıç ve bitiş indeksleri
-        const from = page * pageSize;
-        
-        // Sorguyu oluştur
-        let query = supabase
-          .from('customer_balances')
-          .select(`
-            *,
-            customers (
-              id, name, code, sector_code
-            )
-          `)
-          .range(from, from + pageSize - 1);
-        
-        // Erişim filtresi ekle - admin ve muhasebe dışındaki kullanıcılar için
-        if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
-          console.log("Normal kullanıcı için filtre uygulanıyor");
-          
-          // ÇOK FAZLA ID VARSA LIMIT UYGULA
-          if (assignedIds.length > 200) {
-            // İlk 200 müşteriyi al
-            const limitedIds = assignedIds.slice(0, 200);
-            query = query.in('customer_id', limitedIds);
-            console.log(`İlk ${limitedIds.length} müşteri gösteriliyor (toplam ${assignedIds.length})`);
-            
-            // Kullanıcıya bilgi ver (sadece ilk sayfa yüklenirken)
-            if (page === 0) {
-              toast.info(`Size atanan ${assignedIds.length} müşteriden ilk 200'ü gösteriliyor. Daha fazlası için arama kullanın.`, {
-                autoClose: 5000
-              });
-            }
-          } else {
-            query = query.in('customer_id', assignedIds);
-          }
-        } else if (!isAdmin && !isMuhasebe) {
-          // Hiç atanmış müşteri yoksa ve admin veya muhasebe değilse
-          console.log("Kullanıcıya atanmış müşteri yok veya erişim yetkisi yok");
-          query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
-        } else {
-          console.log("Admin veya muhasebe kullanıcısı, tüm müşterilere erişim var");
-        }
-        
-        console.log("Veri çekilecek sayfalar:", { page, from, to: from + pageSize - 1 });
-        
-        const { data: pageData, error: pageError } = await query;
-        
-        if (pageError) {
-          console.error(`Sayfa ${page+1} yüklenirken hata:`, pageError);
-          throw pageError;
-        }
-        
-        // Eğer boş veri döndüyse veya pageSize'dan az veri döndüyse, tüm verileri çektik demektir
-        if (!pageData || pageData.length === 0) {
-          console.log(`Sayfa ${page+1}: Veri yok veya bitti`);
-          hasMoreData = false;
-        } else {
-          console.log(`Sayfa ${page+1}: ${pageData.length} kayıt alındı`);
-          // Verileri ana diziye ekle
-          allData = [...allData, ...pageData];
-          
-          // Eğer dönen veri sayısı pageSize'dan azsa, tüm verileri çektik demektir
-          if (pageData.length < pageSize) {
-            hasMoreData = false;
-          } else {
-            // Sonraki sayfaya geç
-            page++;
-          }
-        }
-      }
-
-      // Tüm kayıtları sakla (Excel dışa aktarımı için)
-      const data = allData;
-      setAllRecords(data);
-      
-      console.log(`Toplam ${data.length} veri yüklendi`);
-      
-      if (!data || data.length === 0) {
-        setBalances([]);
-        setStats({ 
-          total: 0, 
-          displayed: 0, 
+  // Process balance data into filtered and statistics
+  const processBalanceData = async (data) => {
+    if (!data || data.length === 0) {
+      return {
+        filteredBalances: [],
+        stats: {
+          total: 0,
+          displayed: 0,
           allRecordsCount: 0,
           totalPastDueBalance: 0,
           totalNotDueBalance: 0,
           totalBalance: 0
-        });
-        setLoading(false);
-        return;
-      }
-      
-      console.log(`Toplam ${data.length} bakiye kaydı yüklendi. Filtreleniyor...`);
-      
-      // Bugünün tarihi
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // Vade aralığı için bitiş tarihi
-      const futureDate = addDays(today, dateRange);
-      
-      let nonZeroBalanceCount = 0;
-      let totalPastDueBalance = 0;
-      let totalNotDueBalance = 0;
-      let totalBalance = 0;
-      
-      // Her bakiyeyi işle
-      let processedBalances = data.map(balance => {
-        // Müşteri bilgisi yoksa atla
-        if (!balance.customers) return null;
-        
-        try {
-          // Bakiye değerlerini sayısal olarak kontrol et
-          const pastDueBalance = parseFloat(balance.past_due_balance || 0);
-          const notDueBalance = parseFloat(balance.not_due_balance || 0);
-          const totalBalanceValue = parseFloat(balance.total_balance || 0) || (pastDueBalance + notDueBalance);
-          
-          // Sıfır olmayan toplam bakiyeleri say
-          if (Math.abs(totalBalanceValue) >= 0.01) {
-            nonZeroBalanceCount++;
-          }
-          
-          // Toplam bakiye sıfır veya çok küçük miktarsa kayıtı tamamen atla 
-          // (yuvarlama hatalarını önlemek için 0.01'den küçük kontrol ediyoruz)
-          if (Math.abs(totalBalanceValue) < 0.01) {
-            return null;
-          }
-          
-          // Vade tarihlerini kontrol et
-          let isPastDue = false;  // Vadesi geçmiş mi
-          let isUpcoming = false; // Yaklaşan vade mi
-          let effectiveDueDate = null; // Gösterilecek vade tarihi
+        }
+      };
+    }
 
-          // 1. Vadesi geçen bakiye tarihi kontrolü
-          if (balance.past_due_date) {
-            const pastDueDate = new Date(balance.past_due_date);
-            pastDueDate.setHours(0, 0, 0, 0);
-            
-            // Vadesi geçmiş kontrolü
-            if (pastDueDate < today) {
-              // Vadesi geçmiş
-              isPastDue = true;
-              effectiveDueDate = pastDueDate;
-              console.log(`Vadesi geçmiş: ${balance.customers?.name}, Vade tarihi: ${pastDueDate.toISOString()}`);
-            } else if (pastDueDate >= today && pastDueDate <= futureDate) {
-              // Yaklaşan vadeli
-              isUpcoming = true;
-              effectiveDueDate = pastDueDate;
-              console.log(`Yaklaşan vade: ${balance.customers?.name}, Vade tarihi: ${pastDueDate.toISOString()}`);
-            }
-          }
+    console.log(`Processing ${data.length} balance records...`);
 
-          // 2. Vadesi geçmeyen bakiye tarihi kontrolü 
-          if (balance.not_due_date) {
-            const notDueDate = new Date(balance.not_due_date);
-            notDueDate.setHours(0, 0, 0, 0);
-            
-            // Yakın vadeli mi?
-            if (notDueDate >= today && notDueDate <= futureDate) {
-              isUpcoming = true;
-              
-              // Eğer önceki tarihten daha yakınsa bu tarihi kullan
-              if (!effectiveDueDate || notDueDate < effectiveDueDate) {
-                effectiveDueDate = notDueDate;
-                console.log(`Yaklaşan vade (not_due): ${balance.customers?.name}, Vade tarihi: ${notDueDate.toISOString()}`);
-              }
-            }
-          }
+    // Today's date
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-          // 3. Eski due_date alanı kontrolü
-          if (balance.due_date && !effectiveDueDate) {
-            const dueDate = new Date(balance.due_date);
-            dueDate.setHours(0, 0, 0, 0);
-            
-            if (dueDate < today) {
-              isPastDue = true;
-              effectiveDueDate = dueDate;
-              console.log(`Vadesi geçmiş (due_date): ${balance.customers?.name}, Vade tarihi: ${dueDate.toISOString()}`);
-            } else if (dueDate >= today && dueDate <= futureDate) {
-              isUpcoming = true;
-              effectiveDueDate = dueDate;
-              console.log(`Yaklaşan vade (due_date): ${balance.customers?.name}, Vade tarihi: ${dueDate.toISOString()}`);
-            }
-          }
-          
-          // Toplam değerleri güncelle
-          totalPastDueBalance += pastDueBalance;
-          totalNotDueBalance += notDueBalance;
-          totalBalance += totalBalanceValue;
-          
-          // İşlenmiş bakiye verisini döndür
-          return {
-            ...balance,
-            effective_due_date: effectiveDueDate ? effectiveDueDate.toISOString() : null,
-            is_past_due: isPastDue,is_upcoming: isUpcoming,
-            calculated_past_due: pastDueBalance,
-            calculated_not_due: notDueBalance,
-            calculated_total: totalBalanceValue
-          };
-        } catch (err) {
-          console.error("Bakiye işleme hatası:", err, balance);
+    // Date range for upcoming payments
+    const futureDate = addDays(today, dateRange);
+
+    let nonZeroBalanceCount = 0;
+    let totalPastDueBalance = 0;
+    let totalNotDueBalance = 0;
+    let totalBalance = 0;
+
+    // Process each balance
+    let processedBalances = data.map(balance => {
+      // Skip if no customer info
+      if (!balance.customers) return null;
+
+      try {
+        // Parse balance values
+        const pastDueBalance = parseFloat(balance.past_due_balance || 0);
+        const notDueBalance = parseFloat(balance.not_due_balance || 0);
+        const totalBalanceValue = parseFloat(balance.total_balance || 0) || (pastDueBalance + notDueBalance);
+
+        // Count non-zero balances
+        if (Math.abs(totalBalanceValue) >= 0.01) {
+          nonZeroBalanceCount++;
+        }
+
+        // Skip records with zero or very small total balance
+        if (Math.abs(totalBalanceValue) < 0.01) {
           return null;
         }
-      }).filter(item => item !== null); // null değerleri filtrele
-      
-      // İstatistikleri güncelle
-      setStats({
+
+        // Check due dates
+        let isPastDue = false;
+        let isUpcoming = false;
+        let effectiveDueDate = null;
+
+        // 1. Past due date check
+        if (balance.past_due_date) {
+          const pastDueDate = new Date(balance.past_due_date);
+          pastDueDate.setHours(0, 0, 0, 0);
+
+          if (pastDueDate < today) {
+            isPastDue = true;
+            effectiveDueDate = pastDueDate;
+          } else if (pastDueDate >= today && pastDueDate <= futureDate) {
+            isUpcoming = true;
+            effectiveDueDate = pastDueDate;
+          }
+        }
+
+        // 2. Not due date check
+        if (balance.not_due_date) {
+          const notDueDate = new Date(balance.not_due_date);
+          notDueDate.setHours(0, 0, 0, 0);
+
+          if (notDueDate >= today && notDueDate <= futureDate) {
+            isUpcoming = true;
+            if (!effectiveDueDate || notDueDate < effectiveDueDate) {
+              effectiveDueDate = notDueDate;
+            }
+          }
+        }
+
+        // 3. Legacy due_date check
+        if (balance.due_date && !effectiveDueDate) {
+          const dueDate = new Date(balance.due_date);
+          dueDate.setHours(0, 0, 0, 0);
+
+          if (dueDate < today) {
+            isPastDue = true;
+            effectiveDueDate = dueDate;
+          } else if (dueDate >= today && dueDate <= futureDate) {
+            isUpcoming = true;
+            effectiveDueDate = dueDate;
+          }
+        }
+
+        // Update totals
+        totalPastDueBalance += pastDueBalance;
+        totalNotDueBalance += notDueBalance;
+        totalBalance += totalBalanceValue;
+
+        return {
+          ...balance,
+          effective_due_date: effectiveDueDate ? effectiveDueDate.toISOString() : null,
+          is_past_due: isPastDue,
+          is_upcoming: isUpcoming,
+          calculated_past_due: pastDueBalance,
+          calculated_not_due: notDueBalance,
+          calculated_total: totalBalanceValue
+        };
+      } catch (err) {
+        console.error("Balance processing error:", err, balance);
+        return null;
+      }
+    }).filter(item => item !== null);
+
+    // Apply filter type
+    let filteredBalances = processedBalances;
+
+    if (filterType === 'upcoming') {
+      filteredBalances = processedBalances.filter(balance => {
+        if (balance.calculated_not_due <= VadeHelper.MIN_BALANCE) return false;
+        if (!balance.not_due_date) return false;
+
+        try {
+          const notDueDate = new Date(balance.not_due_date);
+          notDueDate.setHours(0, 0, 0, 0);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const futureDate = addDays(today, dateRange);
+
+          if (notDueDate >= today && notDueDate <= futureDate) {
+            balance.effective_due_date = notDueDate.toISOString();
+            return true;
+          }
+          return false;
+        } catch (err) {
+          console.error("Date processing error (not_due_date):", err, balance.not_due_date);
+          return false;
+        }
+      });
+    } else if (filterType === 'overdue') {
+      filteredBalances = processedBalances.filter(balance =>
+        (balance.is_past_due || (!balance.effective_due_date && balance.calculated_past_due > VadeHelper.MIN_BALANCE))
+        && balance.calculated_past_due > VadeHelper.MIN_BALANCE
+      );
+    }
+
+    // Apply sorting
+    filteredBalances = sortData(filteredBalances);
+
+    return {
+      filteredBalances,
+      stats: {
         total: nonZeroBalanceCount,
-        displayed: processedBalances.length,
+        displayed: filteredBalances.length,
         allRecordsCount: data.length,
         totalPastDueBalance: totalPastDueBalance,
         totalNotDueBalance: totalNotDueBalance,
         totalBalance: totalBalance
-      });
-      
-      // Filtreleme tipine göre kayıtları filtrele
-      let filteredBalances = processedBalances;
-      
-      if (filterType === 'upcoming') {
-        // Sadece yaklaşan vadeli ve 100 TL üzeri bakiyeleri al
-        // NOT: Sadece not_due_balance ve not_due_date alanlarına bakacağız
-        filteredBalances = processedBalances.filter(balance => {
-          // Vadesi geçmemiş bakiye 100 TL'den fazla olmalı
-          if (balance.calculated_not_due <= VadeHelper.MIN_BALANCE) {
-            return false;
-          }
-          
-          // not_due_date alanı olmalı
-          if (!balance.not_due_date) {
-            return false;
-          }
-          
-          // Tarih kontrolü - bugün ve gelecekteki tarihleri dahil edelim
-          try {
-            const notDueDate = new Date(balance.not_due_date);
-            notDueDate.setHours(0, 0, 0, 0);
-            
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            
-            const futureDate = addDays(today, dateRange);
-            
-            // Sadece bugün ve gelecekteki tarihler
-            if (notDueDate >= today && notDueDate <= futureDate) {
-              console.log(`Yaklaşan vade KABUL: ${balance.customers?.name}, Vade: ${notDueDate.toISOString()}`);
-              
-              // Vadesi geçmemiş tarihi effective_due_date olarak ayarla
-              // Bu şekilde sıralama ve badge doğru çalışacak
-              balance.effective_due_date = notDueDate.toISOString();
-              return true;
-            }
-            
-            return false;
-          } catch (err) {
-            console.error("Tarih işleme hatası (not_due_date):", err, balance.not_due_date);
-            return false;
-          }
-        });
-      } 
-      else if (filterType === 'overdue') {
-        // Sadece vadesi geçmiş ve 100 TL üzeri bakiyeleri al
-        filteredBalances = processedBalances.filter(balance => 
-          (balance.is_past_due || (!balance.effective_due_date && balance.calculated_past_due > VadeHelper.MIN_BALANCE)) 
-          && balance.calculated_past_due > VadeHelper.MIN_BALANCE
-        );
       }
-      
-      // Sıralama uygula
-      filteredBalances = sortData(filteredBalances);
-      console.log(`Filtreleme sonrası ${filteredBalances.length} kayıt görüntülenecek.`);
-      
-      // Bakiyeleri ayarla
-      setBalances(filteredBalances);
-      
-      // Son not tarihlerini getir - YENİ EKLENDİ
-      if (filteredBalances.length > 0) {
-        const customerIds = filteredBalances.map(balance => balance.customer_id);
+    };
+  };
+
+  // Get total count of customer balances for pagination
+  const fetchCustomerBalanceCount = async () => {
+    try {
+      const assignedIds = await getAssignedCustomerIds();
+
+      let query = supabase
+        .from('customer_balances')
+        .select('*', { count: 'exact', head: true });
+
+      // Apply access filter
+      if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+        query = query.in('customer_id', assignedIds);
+      } else if (!isAdmin && !isMuhasebe) {
+        query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
+      }
+
+      const { count, error } = await query;
+
+      if (error) throw error;
+
+      return count || 0;
+    } catch (err) {
+      console.error("Customer balance count error:", err);
+      return 0;
+    }
+  };
+
+  // Fetch customer balances by page
+  const fetchCustomerBalancesPage = async (page = 0, pageSize = pagination.pageSize) => {
+    setLoading(true);
+    try {
+      // Get total count first
+      const totalCount = await fetchCustomerBalanceCount();
+      const totalPages = Math.ceil(totalCount / pageSize);
+
+      // Update pagination
+      setPagination({
+        page,
+        pageSize,
+        total: totalCount,
+        totalPages
+      });
+
+      // Calculate range
+      const from = page * pageSize;
+      const to = from + pageSize - 1;
+
+      // Get user access control
+      const assignedIds = await getAssignedCustomerIds();
+
+      // Create paginated query
+      let query = supabase
+        .from('customer_balances')
+        .select(`
+          *,
+          customers (
+            id, name, code, sector_code
+          )
+        `)
+        .range(from, to)
+        .order('customer_id');
+
+      // Apply access filter
+      if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+        query = query.in('customer_id', assignedIds);
+      } else if (!isAdmin && !isMuhasebe) {
+        query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Process the data
+      const processedData = await processBalanceData(data || []);
+      setBalances(processedData.filteredBalances);
+      setAllRecords(data || []); // Store raw data for export
+
+      // Update stats
+      setStats(processedData.stats);
+
+      // Fetch last note dates
+      if (processedData.filteredBalances.length > 0) {
+        const customerIds = processedData.filteredBalances.map(balance => balance.customer_id);
         fetchLastNoteDates(customerIds);
       }
-      
+
     } catch (err) {
-      console.error("Veri çekerken hata:", err);
+      console.error("Customer balance page fetch error:", err);
       setError(err.message);
       toast.error("Veriler yüklenirken hata oluştu");
     } finally {
       setLoading(false);
     }
+  };
+
+  // Legacy fetchData function for backward compatibility
+  const fetchData = async (force = false) => {
+    // Use the new paginated function
+    fetchCustomerBalancesPage(0);
   };
 
   // Sıralama fonksiyonu
@@ -918,23 +958,15 @@ const PaymentList = () => {
     });
   };
 
-  // Arama ile filtreleme
-  const filteredBalances = React.useMemo(() => {
-    if (!searchTerm.trim()) return balances;
-    
-    const searchLower = searchTerm.toLowerCase().trim();
-    return balances.filter(balance => {
-      // Müşteri bilgisi yoksa filtreleme
-      if (!balance.customers) return false;
-      
-      // Müşteri adı, kodu veya sektörüne göre ara
-      return (
-        (balance.customers.name && balance.customers.name.toLowerCase().includes(searchLower)) ||
-        (balance.customers.code && balance.customers.code.toLowerCase().includes(searchLower)) ||
-        (balance.customers.sector_code && balance.customers.sector_code.toLowerCase().includes(searchLower))
-      );
-    });
-  }, [balances, searchTerm]);
+  // Since we now search at database level, no client-side filtering needed
+  const filteredBalances = balances;
+
+  // Page change handler
+  const handlePageChange = (newPage) => {
+    if (newPage >= 0 && newPage < pagination.totalPages) {
+      fetchCustomerBalancesPage(newPage);
+    }
+  };
 
   // İlk yükleme için ve filtre değişikliklerinde verileri getir
   // KEY FIX: Wait for access loading before fetching data
@@ -1219,7 +1251,7 @@ const PaymentList = () => {
           type="text"
           placeholder="Müşteri adı, kodu veya sektör ile ara..."
           value={searchTerm}
-          onChange={handleSearch}
+          onChange={(e) => handleSearch(e.target.value)}
           style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
         />
       </div>
@@ -1455,6 +1487,68 @@ const PaymentList = () => {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            {/* Pagination controls */}
+            {!searchTerm.trim() && pagination.totalPages > 1 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '10px',
+                margin: '20px 0',
+                alignItems: 'center',
+                flexWrap: 'wrap'
+              }}>
+                <button
+                  onClick={() => handlePageChange(0)}
+                  disabled={pagination.page === 0 || loading}
+                  className="btn"
+                  title="İlk Sayfa"
+                >
+                  ««
+                </button>
+                <button
+                  onClick={() => handlePageChange(pagination.page - 1)}
+                  disabled={pagination.page === 0 || loading}
+                  className="btn"
+                  title="Önceki Sayfa"
+                >
+                  «
+                </button>
+
+                <span>
+                  Sayfa {pagination.page + 1} / {pagination.totalPages}
+                </span>
+
+                <button
+                  onClick={() => handlePageChange(pagination.page + 1)}
+                  disabled={pagination.page === pagination.totalPages - 1 || loading}
+                  className="btn"
+                  title="Sonraki Sayfa"
+                >
+                  »
+                </button>
+                <button
+                  onClick={() => handlePageChange(pagination.totalPages - 1)}
+                  disabled={pagination.page === pagination.totalPages - 1 || loading}
+                  className="btn"
+                  title="Son Sayfa"
+                >
+                  »»
+                </button>
+              </div>
+            )}
+
+            <div style={{ margin: '20px 0', textAlign: 'center' }}>
+              {loading ? (
+                <p>Yükleniyor...</p>
+              ) : (
+                <p>
+                  {searchTerm.trim() ?
+                    `${filteredBalances.length} kayıt bulundu` :
+                    `${filteredBalances.length} kayıt gösteriliyor (toplam ${pagination.total})`}
+                </p>
+              )}
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '20px', color: '#888' }}>

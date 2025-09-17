@@ -200,9 +200,53 @@ const CustomerList = () => {
     fetchCustomersPage(0);
   };
   
-  // Basic search handler
-  const handleBasicSearch = (value) => {
+  // Basic search handler - artık veritabanından arayacak
+  const handleBasicSearch = async (value) => {
     setSearchTerm(value);
+
+    if (!value.trim()) {
+      // Arama terimi boşsa normal sayfalama ile geri dön
+      fetchCustomersPage(0);
+      return;
+    }
+
+    // Arama varsa tüm veritabanında ara
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('customers')
+        .select('*');
+
+      // Erişim kontrolü
+      query = await filterCustomersByAccess(query);
+
+      // Arama filtresi
+      const searchLower = value.toLowerCase().trim();
+      query = query.or(`name.ilike.%${searchLower}%,code.ilike.%${searchLower}%,sector_code.ilike.%${searchLower}%`);
+
+      // Sıralama
+      query = query.order('name');
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      setCustomers(data || []);
+
+      // Pagination'ı sıfırla çünkü arama sonucu
+      setPagination(prev => ({
+        ...prev,
+        page: 0,
+        total: data?.length || 0,
+        totalPages: 1
+      }));
+
+    } catch (err) {
+      console.error("Arama hatası:", err);
+      toast.error("Arama sırasında hata oluştu");
+    } finally {
+      setLoading(false);
+    }
   };
   
   // Get total customer count
@@ -289,17 +333,8 @@ const CustomerList = () => {
     }
   };
   
-  // Filter customers by search term
-  const filteredCustomers = React.useMemo(() => {
-    if (!searchTerm.trim()) return customers;
-    
-    const searchLower = searchTerm.toLowerCase().trim();
-    return customers.filter(customer => 
-      (customer.name && customer.name.toLowerCase().includes(searchLower)) ||
-      (customer.code && customer.code.toLowerCase().includes(searchLower)) ||
-      (customer.sector_code && customer.sector_code.toLowerCase().includes(searchLower))
-    );
-  }, [customers, searchTerm]);
+  // Since we now search at database level, no client-side filtering needed
+  const filteredCustomers = customers;
 
   // Error display
   if (error) {
@@ -379,7 +414,7 @@ const CustomerList = () => {
       <SearchBox
         placeholder="Müşteri adı, kodu veya sektör ile ara..."
         value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
+        onChange={(e) => handleBasicSearch(e.target.value)}
         buttonText={loading ? "Yükleniyor..." : "Ara"}
       />
       

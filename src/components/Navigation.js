@@ -135,52 +135,27 @@ const Navigation = ({ userRole, isMuhasebe, isMenuOpen, closeMenu }) => {
           </NavLink>
         )}
 
-        {/* Raporlar Bölümü */}
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>Raporlar</div>
-
-          {/* Kullanıcı Aktivite Raporu - tüm kullanıcılar */}
+        {/* Not Raporları - sadece admin ve muhasebe kullanıcılar için */}
+        {(userRole === 'admin' || isMuhasebe) && (
           <NavLink
-            to="/user-reports"
+            to="/notes-report"
             style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
             onClick={handleLinkClick}
           >
-            Aktivite Raporum
+            Not Raporları
           </NavLink>
+        )}
 
-          {/* Not Raporları - sadece admin ve muhasebe kullanıcılar için */}
-          {(userRole === 'admin' || isMuhasebe) && (
-            <NavLink
-              to="/notes-report"
-              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-              onClick={handleLinkClick}
-            >
-              Not Raporları
-            </NavLink>
-          )}
-
-          {/* Yönetim Raporları - sadece admin ve muhasebe için */}
-          {(userRole === 'admin' || isMuhasebe) && (
-            <NavLink
-              to="/management-reports"
-              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-              onClick={handleLinkClick}
-            >
-              Yönetim Raporları
-            </NavLink>
-          )}
-
-          {/* Erişim Debug Aracı - sadece admin ve muhasebe için */}
-          {(userRole === 'admin' || isMuhasebe) && (
-            <NavLink
-              to="/access-debug"
-              style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
-              onClick={handleLinkClick}
-            >
-              Erişim Debug
-            </NavLink>
-          )}
-        </div>
+        {/* Yönetim Raporları - sadece admin için */}
+        {userRole === 'admin' && (
+          <NavLink
+            to="/management-reports"
+            style={({ isActive }) => isActive ? { ...linkStyle, ...activeLinkStyle } : linkStyle}
+            onClick={handleLinkClick}
+          >
+            Yönetim Raporları
+          </NavLink>
+        )}
         
         {/* Hesap Bölümü */}
         <div style={sectionStyle}>

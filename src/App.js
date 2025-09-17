@@ -17,8 +17,6 @@ import Login from './pages/Login';
 import UserAssignments from './pages/UserAssignments';
 import AuthManager from './pages/AuthManager';
 import NotesReport from './pages/NotesReport'; // Not raporu sayfası
-import AccessDebug from './pages/AccessDebug';
-import UserActivityReports from './pages/UserActivityReports';
 import ManagementReports from './pages/ManagementReports';
 
 // Components
@@ -176,10 +174,8 @@ function App() {
               <Route path="/auth-manager" element={session && isAdmin ? <AuthManager /> : <Navigate to="/" />} />
               {/* Not Raporu sayfası - sadece admin ve muhasebe erişebilir */}
               <Route path="/notes-report" element={session && (isAdmin || isMuhasebeUser) ? <NotesReport /> : <Navigate to="/" />} />
-              {/* Yeni rapor sayfaları */}
-              <Route path="/access-debug" element={session && (isAdmin || isMuhasebeUser) ? <AccessDebug /> : <Navigate to="/" />} />
-              <Route path="/user-reports" element={session ? <UserActivityReports /> : <Navigate to="/login" />} />
-              <Route path="/management-reports" element={session && (isAdmin || isMuhasebeUser) ? <ManagementReports /> : <Navigate to="/" />} />
+              {/* Yönetim Raporları - sadece admin */}
+              <Route path="/management-reports" element={session && isAdmin ? <ManagementReports /> : <Navigate to="/" />} />
               <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
             </Routes>
           </main>
