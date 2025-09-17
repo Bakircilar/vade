@@ -826,9 +826,6 @@ const PaymentList = () => {
       const from = page * pageSize;
       const to = from + pageSize - 1;
 
-      // Get user access control
-      const assignedIds = await getAssignedCustomerIds();
-
       // Create paginated query
       let query = supabase
         .from('customer_balances')
