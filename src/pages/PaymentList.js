@@ -428,8 +428,45 @@ const PaymentList = () => {
       }
 
       // Apply search filter to customer data
+      // Note: We need to search customers table first, then join with balances
       const searchLower = value.toLowerCase().trim();
-      query = query.or(`customers.name.ilike.%${searchLower}%,customers.code.ilike.%${searchLower}%,customers.sector_code.ilike.%${searchLower}%`);
+
+      // First get matching customer IDs
+      let customerQuery = supabase
+        .from('customers')
+        .select('id')
+        .or(`name.ilike.%${searchLower}%,code.ilike.%${searchLower}%,sector_code.ilike.%${searchLower}%`);
+
+      const { data: customerData, error: customerError } = await customerQuery;
+
+      if (customerError) throw customerError;
+
+      if (!customerData || customerData.length === 0) {
+        // No matching customers found
+        setBalances([]);
+        setAllRecords([]);
+        setPagination(prev => ({
+          ...prev,
+          page: 0,
+          total: 0,
+          totalPages: 0
+        }));
+        setStats({
+          total: 0,
+          displayed: 0,
+          allRecordsCount: 0,
+          totalPastDueBalance: 0,
+          totalNotDueBalance: 0,
+          totalBalance: 0
+        });
+        return;
+      }
+
+      // Get customer IDs that match search
+      const matchingCustomerIds = customerData.map(c => c.id);
+
+      // Now filter balances by matching customer IDs
+      query = query.in('customer_id', matchingCustomerIds);
 
       // Order by customer name
       query = query.order('customer_id');
@@ -830,10 +867,108 @@ const PaymentList = () => {
     }
   };
 
+  // Filter-specific data loading for upcoming/overdue filters
+  const fetchFilteredData = async () => {
+    setLoading(true);
+    try {
+      console.log("Loading filtered data for:", filterType);
+
+      // Get user access control
+      const assignedIds = await getAssignedCustomerIds();
+
+      // Create base query
+      let query = supabase
+        .from('customer_balances')
+        .select(`
+          *,
+          customers (
+            id, name, code, sector_code
+          )
+        `);
+
+      // Apply access filter
+      if (!isAdmin && !isMuhasebe && assignedIds.length > 0) {
+        query = query.in('customer_id', assignedIds);
+      } else if (!isAdmin && !isMuhasebe) {
+        query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
+      }
+
+      // Apply filter-specific conditions
+      if (filterType === 'upcoming') {
+        // For upcoming payments, load all data with not_due_date in range
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const futureDate = addDays(today, dateRange);
+
+        query = query
+          .not('not_due_date', 'is', null)
+          .gte('not_due_date', today.toISOString())
+          .lte('not_due_date', futureDate.toISOString())
+          .gt('not_due_balance', VadeHelper.MIN_BALANCE);
+      } else if (filterType === 'overdue') {
+        // For overdue payments, load all data with past_due_date < today
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        query = query
+          .not('past_due_date', 'is', null)
+          .lt('past_due_date', today.toISOString())
+          .gt('past_due_balance', VadeHelper.MIN_BALANCE);
+      }
+
+      // Order by appropriate field
+      if (filterType === 'upcoming') {
+        query = query.order('not_due_date');
+      } else if (filterType === 'overdue') {
+        query = query.order('past_due_date');
+      } else {
+        query = query.order('customer_id');
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+
+      // Process the data
+      const processedData = await processBalanceData(data || []);
+      setBalances(processedData.filteredBalances);
+      setAllRecords(data || []);
+
+      // Update stats
+      setStats(processedData.stats);
+
+      // For filtered data, set pagination to show all results on one page
+      setPagination({
+        page: 0,
+        pageSize: processedData.filteredBalances.length,
+        total: processedData.filteredBalances.length,
+        totalPages: 1
+      });
+
+      // Fetch last note dates
+      if (processedData.filteredBalances.length > 0) {
+        const customerIds = processedData.filteredBalances.map(balance => balance.customer_id);
+        fetchLastNoteDates(customerIds);
+      }
+
+    } catch (err) {
+      console.error("Filtered data fetch error:", err);
+      setError(err.message);
+      toast.error("Veriler yüklenirken hata oluştu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Legacy fetchData function for backward compatibility
   const fetchData = async (force = false) => {
-    // Use the new paginated function
-    fetchCustomerBalancesPage(0);
+    if (filterType === 'upcoming' || filterType === 'overdue') {
+      // Use filter-specific loading for filtered views
+      fetchFilteredData();
+    } else {
+      // Use paginated loading for 'all' view
+      fetchCustomerBalancesPage(0);
+    }
   };
 
   // Sıralama fonksiyonu
