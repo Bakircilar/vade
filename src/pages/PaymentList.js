@@ -405,7 +405,6 @@ const PaymentList = () => {
     // Search in entire database
     setLoading(true);
     try {
-      console.log("Searching payments for:", value);
 
       // Get user access control
       const assignedIds = await getAssignedCustomerIds();
@@ -428,45 +427,13 @@ const PaymentList = () => {
       }
 
       // Apply search filter to customer data
-      // Note: We need to search customers table first, then join with balances
+      // Note: Use joins to avoid long URL with customer IDs
       const searchLower = value.toLowerCase().trim();
 
-      // First get matching customer IDs
-      let customerQuery = supabase
-        .from('customers')
-        .select('id')
-        .or(`name.ilike.%${searchLower}%,code.ilike.%${searchLower}%,sector_code.ilike.%${searchLower}%`);
-
-      const { data: customerData, error: customerError } = await customerQuery;
-
-      if (customerError) throw customerError;
-
-      if (!customerData || customerData.length === 0) {
-        // No matching customers found
-        setBalances([]);
-        setAllRecords([]);
-        setPagination(prev => ({
-          ...prev,
-          page: 0,
-          total: 0,
-          totalPages: 0
-        }));
-        setStats({
-          total: 0,
-          displayed: 0,
-          allRecordsCount: 0,
-          totalPastDueBalance: 0,
-          totalNotDueBalance: 0,
-          totalBalance: 0
-        });
-        return;
-      }
-
-      // Get customer IDs that match search
-      const matchingCustomerIds = customerData.map(c => c.id);
-
-      // Now filter balances by matching customer IDs
-      query = query.in('customer_id', matchingCustomerIds);
+      // Use join with customers table and apply search directly
+      query = query
+        .not('customers.name', 'is', null) // Ensure customer exists
+        .or(`customers.name.ilike.%${searchLower}%,customers.code.ilike.%${searchLower}%,customers.sector_code.ilike.%${searchLower}%`);
 
       // Order by customer name
       query = query.order('customer_id');
@@ -622,7 +589,6 @@ const PaymentList = () => {
       };
     }
 
-    console.log(`Processing ${data.length} balance records...`);
 
     // Today's date
     const today = new Date();
@@ -871,7 +837,6 @@ const PaymentList = () => {
   const fetchFilteredData = async () => {
     setLoading(true);
     try {
-      console.log("Loading filtered data for:", filterType);
 
       // Get user access control
       const assignedIds = await getAssignedCustomerIds();
@@ -1107,7 +1072,6 @@ const PaymentList = () => {
   // KEY FIX: Wait for access loading before fetching data
   useEffect(() => {
     if (!accessLoading) {
-      console.log('PaymentList - Filtre useEffect tetiklendi:', { filterType, dateRange, search: location.search });
       fetchData(true); // Yeni filtreyi uygulamak için force true
     }
   }, [filterType, dateRange, location.search, accessLoading]);
@@ -1115,7 +1079,6 @@ const PaymentList = () => {
   // KEY FIX: Initial data load - removed timeout and accessLoading check
   useEffect(() => {
     if (!accessLoading) {
-      console.log('PaymentList - İlk yükleme useEffect tetiklendi');
       fetchData(true); // Force data fetch on initial render
     }
   }, [accessLoading]);
@@ -1146,7 +1109,6 @@ const PaymentList = () => {
       const diffMs = notDueDate.getTime() -today.getTime();
       const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
       
-      console.log(`[PaymentList-Upcoming] Vade durumu: Müşteri=${balance.customers?.name}, Vade=${notDueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
       
       if (diffDays < 0) {
         // Vade tarihi geçmiş (yaklaşan vadelerde gösterilmemeli)
@@ -1187,7 +1149,6 @@ const PaymentList = () => {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     
     // Sonucu logla
-    console.log(`[PaymentList-Normal] Durum hesaplaması: Müşteri=${balance.customers?.name}, Vade=${dueDate.toISOString()}, Bugün=${today.toISOString()}, Fark=${diffDays} gün`);
     
     if (diffDays < 0) {
       // Vade tarihi geçmiş

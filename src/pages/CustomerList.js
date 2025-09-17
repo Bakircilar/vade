@@ -255,14 +255,14 @@ const CustomerList = () => {
       let query = supabase
         .from('customers')
         .select('*', { count: 'exact', head: true });
-      
+
       // Access filtering
       query = await filterCustomersByAccess(query);
-      
+
       const { count, error } = await query;
-      
+
       if (error) throw error;
-      
+
       return count || 0;
     } catch (err) {
       console.error("Müşteri sayısı alınamadı:", err);
