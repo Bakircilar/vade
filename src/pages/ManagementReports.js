@@ -63,12 +63,11 @@ const ManagementReports = () => {
 
       if (usersError) throw usersError;
 
-      // 2. Kullanıcı aktiviteleri (notlar)
+      // 2. Kullanıcı aktiviteleri (notlar) - created_by yok, tüm notları al
       const { data: notes, error: notesError } = await supabase
         .from('customer_notes')
         .select(`
           id,
-          created_by,
           created_at,
           customer_id,
           note_content
@@ -159,9 +158,9 @@ const ManagementReports = () => {
   };
 
   const processManagementData = (users, notes, loginLogs, assignments, balances, startDate, endDate) => {
-    // Kullanıcı performans metrikleri
+    // Kullanıcı performans metrikleri - created_by olmadığı için not sayısını alamıyoruz
     const userPerformance = users.map(user => {
-      const userNotes = notes.filter(note => note.created_by === user.id);
+      const userNotes = []; // notes.filter(note => note.created_by === user.id); - created_by yok
       const userLogins = loginLogs.filter(login => login.user_id === user.id);
       const userAssignments = assignments.filter(assign => assign.user_id === user.id);
 
@@ -257,7 +256,7 @@ const ManagementReports = () => {
       const dayKey = format(new Date(note.created_at), 'yyyy-MM-dd');
       if (dailyTrend[dayKey]) {
         dailyTrend[dayKey].notes++;
-        dailyTrend[dayKey].users.add(note.created_by);
+        // created_by olmadığı için user tracking kaldırıldı
       }
     });
 
@@ -269,7 +268,7 @@ const ManagementReports = () => {
       }
     });
 
-    // Sektör bazlı faaliyet
+    // Sektör bazlı faaliyet - created_by olmadığı için basitleştirildi
     const sectorActivity = {};
     notes.forEach(note => {
       const sector = note.customers?.sector_code || 'Belirsiz';
@@ -281,7 +280,7 @@ const ManagementReports = () => {
         };
       }
       sectorActivity[sector].noteCount++;
-      sectorActivity[sector].users.add(note.created_by);
+      // created_by olmadığı için user tracking kaldırıldı
     });
 
     // Problem alanları tespit et

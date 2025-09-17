@@ -94,7 +94,7 @@ const AccessDebug = () => {
       // 5. Son giriş bilgisi (şimdilik devre dışı)
       const loginLogs = [];
 
-      // 6. Kullanıcının notlarını al
+      // 6. Kullanıcının notlarını al - created_by sütunu olmadığı için tüm notları al
       let notes = [];
       try {
         const { data: notesData, error: notesError } = await supabase
@@ -105,7 +105,6 @@ const AccessDebug = () => {
             note_content,
             created_at
           `)
-          .eq('created_by', selectedUser)
           .order('created_at', { ascending: false })
           .limit(10);
 

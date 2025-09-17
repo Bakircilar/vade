@@ -82,12 +82,11 @@ const UserActivityReports = () => {
         userFilter = currentUser?.id;
       }
 
-      // 1. Kullanıcı not aktiviteleri
+      // 1. Kullanıcı not aktiviteleri - sadece temel alanları al
       let notesQuery = supabase
         .from('customer_notes')
         .select(`
           id,
-          created_by,
           created_at,
           customer_id,
           note_content
@@ -95,9 +94,8 @@ const UserActivityReports = () => {
         .gte('created_at', start.toISOString())
         .lte('created_at', end.toISOString());
 
-      if (userFilter) {
-        notesQuery = notesQuery.eq('created_by', userFilter);
-      }
+      // Created_by sütunu olmadığı için kullanıcı filtresini kaldırıyoruz
+      // Tüm notları alacağız
 
       const { data: notes, error: notesError } = await notesQuery.order('created_at', { ascending: false });
 
@@ -214,23 +212,8 @@ const UserActivityReports = () => {
       }
     });
 
-    // Kullanıcı bazlı istatistikler
+    // Kullanıcı bazlı istatistikler - created_by olmadığı için atlanıyor
     const userStats = {};
-    notes.forEach(note => {
-      const userId = note.created_by;
-      const userName = note.profiles?.full_name || 'İsimsiz Kullanıcı';
-
-      if (!userStats[userId]) {
-        userStats[userId] = {
-          name: userName,
-          noteCount: 0,
-          customerCount: new Set()
-        };
-      }
-
-      userStats[userId].noteCount++;
-      userStats[userId].customerCount.add(note.customer_id);
-    });
 
     // Sektör bazlı aktivite
     const sectorStats = {};
