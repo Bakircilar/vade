@@ -221,8 +221,10 @@ const CustomerList = () => {
       const searchLower = value.toLowerCase().trim();
       query = query.or(`name.ilike.%${searchLower}%,code.ilike.%${searchLower}%,sector_code.ilike.%${searchLower}%`);
 
-      // Erişim kontrolü
-      query = await filterCustomersByAccess(query);
+      // Erişim kontrolü - sadece admin olmayan kullanıcılar için
+      if (!isAdmin && !isMuhasebe) {
+        query = await filterCustomersByAccess(query);
+      }
 
       // Sıralama
       query = query.order('name');

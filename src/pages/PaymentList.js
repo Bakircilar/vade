@@ -426,12 +426,42 @@ const PaymentList = () => {
         query = query.filter('customer_id', 'eq', '00000000-0000-0000-0000-000000000000');
       }
 
-      // Apply search filter to customer data
-      // Note: Use joins to avoid long URL with customer IDs
+      // First search customers table to get matching IDs
       const searchLower = value.toLowerCase().trim();
 
-      // Use join with customers table and apply search directly
-      query = query.or(`customers.name.ilike.%${searchLower}%,customers.code.ilike.%${searchLower}%,customers.sector_code.ilike.%${searchLower}%`);
+      let customerQuery = supabase
+        .from('customers')
+        .select('id')
+        .or(`name.ilike.%${searchLower}%,code.ilike.%${searchLower}%,sector_code.ilike.%${searchLower}%`);
+
+      const { data: customerData, error: customerError } = await customerQuery;
+
+      if (customerError) throw customerError;
+
+      if (!customerData || customerData.length === 0) {
+        // No matching customers found
+        setBalances([]);
+        setAllRecords([]);
+        setPagination(prev => ({
+          ...prev,
+          page: 0,
+          total: 0,
+          totalPages: 0
+        }));
+        return;
+      }
+
+      // Get customer IDs that match search - limit to reasonable number to avoid URL issues
+      const matchingCustomerIds = customerData.slice(0, 1000).map(c => c.id);
+
+      // Apply customer ID filter in smaller chunks if needed
+      if (matchingCustomerIds.length > 500) {
+        // If too many results, refine search or handle differently
+        toast.warning('Çok fazla sonuç bulundu. Daha spesifik arama yapın.');
+        return;
+      }
+
+      query = query.in('customer_id', matchingCustomerIds);
 
       // Order by customer name
       query = query.order('customer_id');
